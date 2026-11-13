@@ -47,6 +47,8 @@ audio{width:100%;margin:12px 0}
 #bar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:none;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(#17110a,#0b0805);border-top:1px solid var(--gold2);box-shadow:0 -6px 24px rgba(245,197,66,.2)}
 #bar span{font-family:Cinzel,Georgia,serif;color:var(--gold);font-size:.85rem}
 #bar audio{flex:1 1 220px;max-width:420px;margin:0}
+.like{background:none;border:1px solid var(--gold2);color:var(--gold);padding:4px 14px;margin:2px 10px 10px;border-radius:999px;font-size:.9rem}
+.like.on{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#1a1204}
 @media (prefers-reduced-motion:reduce){.gold,.disc.spin{animation:none}}
 </style>
 </head>
@@ -68,7 +70,7 @@ audio{width:100%;margin:12px 0}
 <div class="wrap">
   <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1 class="gold">The Midas Room</h1><p class="sub">A private gallery of golden moments</p></header>
   <nav id="nav">
-    <a href="#home">Gallery</a><a href="#comic">Comic</a><a href="#story">Story</a><a href="#give">Donate</a><a href="#admin">Admin</a>
+    <a href="#home">Gallery</a><a href="#comic">Comic</a><a href="#story">Story</a><a href="#chat">Live Chat</a><a href="#give">Donate</a><a href="#admin">Admin</a>
   </nav>
   <main id="view"></main>
 </div>
@@ -76,7 +78,7 @@ audio{width:100%;margin:12px 0}
 <script src="config.js"></script>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,query,orderBy,limit} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 const C=window.SITE||{};
 function shrink(file){
@@ -107,7 +109,7 @@ if(C.firebase&&C.firebase.apiKey){
     db:{
       collection:function(n){return {
         doc:function(id){return wd(doc(fs,n,id));},
-        onSnapshot:function(cb){return onSnapshot(collection(fs,n),function(s){cb({docs:s.docs.map(function(d){return {id:d.id,data:function(){return d.data();}};})});});}
+        onSnapshot:function(cb,o){var q=(o&&o.limit)?query(collection(fs,n),orderBy("ts","desc"),limit(o.limit)):collection(fs,n);return onSnapshot(q,function(s){cb({docs:s.docs.map(function(d){return {id:d.id,data:function(){return d.data();}};})});});}
       };},
       doc:function(p){return wd(doc(fs,...p.split("/")));}
     },
@@ -122,7 +124,7 @@ if(C.firebase&&C.firebase.apiKey){
 <script>
 (function(){
 var PW="gold",APW="Dander_Midas";
-var state={photos:[],comments:[],comics:[],settings:{}};
+var state={photos:[],comments:[],comics:[],likes:[],chat:[],settings:{}};
 var db=null,assets=null,view=document.getElementById("view");
 var isAdmin=false;
 
@@ -149,10 +151,10 @@ function zoom(u){lb.querySelector("img").src=u;lb.style.display="flex";}
 /* ---------- routing ---------- */
 function route(){
   var r=(location.hash||"#home").slice(1);
-  if(["home","comic","story","give","admin"].indexOf(r)<0)r="home";
+  if(["home","comic","story","chat","give","admin"].indexOf(r)<0)r="home";
   document.querySelectorAll("#nav a").forEach(function(a){a.classList.toggle("on",a.getAttribute("href")==="#"+r);});
   view.innerHTML="";
-  ({home:pHome,comic:pComic,story:pStory,give:pGive,admin:pAdmin})[r]();
+  ({home:pHome,comic:pComic,story:pStory,chat:pChat,give:pGive,admin:pAdmin})[r]();
   setSong({home:1,comic:2,story:3,give:4,admin:5}[r]||0);
   var cr=document.getElementById("cr");
   var pics={give:["media/corner2.jpg","50% 12%"],story:["media/corner3.jpg","22% 18%"],comic:["media/corner4.jpg","30% 12%"]};
@@ -171,6 +173,7 @@ function pHome(){
   ps.forEach(function(p){
     var d=h("div",{"class":"ph"},[h("img",{src:p.url,alt:p.cap||"Photo",onclick:function(){zoom(p.url);}})]);
     if(p.cap)d.appendChild(h("p",{text:p.cap}));
+    d.appendChild(likeBtn(p));
     if(isAdmin)d.appendChild(h("button",{"class":"del",text:"Delete",onclick:function(){delPhoto(p);}}));
     g.appendChild(d);
   });
@@ -199,6 +202,7 @@ function pHome(){
 }
 function delPhoto(p){
   if(!confirm("Delete this photo for good?"))return;
+  state.likes.forEach(function(l){if(l.pid===p.id)db.collection("likes").doc(l.id).delete().catch(function(){});});
   db.collection("photos").doc(p.id).delete().then(function(){if(assets&&p.aid)assets.delete(p.aid).catch(function(){});});
 }
 
@@ -239,6 +243,56 @@ function pComic(){
     c.appendChild(d);
   });
   view.appendChild(c);
+}
+
+/* ---------- likes ---------- */
+var mv=null;
+function vid(){var v=lstore("midas-vid")||mv;if(!v){v="v"+Date.now().toString(36)+Math.random().toString(36).slice(2,8);mv=v;lstore("midas-vid",v);}return v;}
+function likeBtn(p){
+  var me=vid(),n=0,mine=false;
+  state.likes.forEach(function(l){if(l.pid===p.id){n++;if(l.vid===me)mine=true;}});
+  return h("button",{"class":"like"+(mine?" on":""),text:(mine?"\u2665 ":"\u2661 ")+n,"aria-label":"Like this photo",onclick:function(){
+    if(!db)return;
+    var r=db.collection("likes").doc(p.id+"_"+me);
+    (mine?r.delete():r.set({pid:p.id,vid:me,ts:Date.now()})).catch(function(){});
+  }});
+}
+function refresh(){var t=document.activeElement&&document.activeElement.tagName;if(t==="INPUT"||t==="TEXTAREA")return;route();}
+
+/* ---------- live chat ---------- */
+var chatBox=null,lastSend=0;
+function renderChat(){
+  if(!chatBox||!document.body.contains(chatBox))return;
+  var near=chatBox.scrollHeight-chatBox.scrollTop-chatBox.clientHeight<80||chatBox.getAttribute("data-f")!=="1";
+  chatBox.setAttribute("data-f","1");
+  chatBox.innerHTML="";
+  state.chat.slice().sort(function(a,b){return a.ts-b.ts;}).forEach(function(m){
+    var row=h("div",{"class":"cm"},[h("b",{text:m.name}),h("small",{text:new Date(m.ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}),h("p",{text:m.text})]);
+    if(isAdmin)row.appendChild(h("button",{"class":"del",text:"Delete",onclick:function(){db.collection("chat").doc(m.id).delete();}}));
+    chatBox.appendChild(row);
+  });
+  if(!state.chat.length)chatBox.appendChild(h("p",{"class":"muted",text:"No messages yet. Say hello!"}));
+  if(near)chatBox.scrollTop=chatBox.scrollHeight;
+}
+function pChat(){
+  var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Live Chat"}),h("p",{"class":"note",text:"Messages show up instantly for everyone here. The latest 100 are shown."})]);
+  chatBox=h("div",{style:"height:50vh;overflow-y:auto;border:1px solid #3a2a0c;border-radius:10px;padding:4px 12px;margin:10px 0;background:#0e0a04"});
+  var nm=h("input",{placeholder:"Your name",maxlength:"40"});nm.value=lstore("midas-name")||"";
+  var tx=h("input",{placeholder:"Type a message…",maxlength:"300"});
+  var er=h("div",{"class":"err"});
+  function send(){
+    var t=tx.value.trim();if(!t)return;
+    if(!db){er.textContent="Chat is not connected yet.";return;}
+    if(Date.now()-lastSend<1500)return;
+    lastSend=Date.now();lstore("midas-name",nm.value);
+    var id="m"+Date.now()+Math.random().toString(36).slice(2,6);
+    db.collection("chat").doc(id).set({name:nm.value.trim()||"Guest",text:t,ts:Date.now()}).then(function(){tx.value="";er.textContent="";}).catch(function(e){er.textContent="Could not send: "+(e&&e.message||"error");});
+  }
+  tx.addEventListener("keydown",function(e){if(e.key==="Enter")send();});
+  c.appendChild(chatBox);c.appendChild(nm);c.appendChild(tx);c.appendChild(er);
+  c.appendChild(h("button",{text:"Send",onclick:send}));
+  view.appendChild(c);
+  renderChat();
 }
 
 /* ---------- story ---------- */
@@ -329,10 +383,12 @@ function pAdmin(){
 /* ---------- data ---------- */
 function snap(s){return s.docs.map(function(d){var o=d.data();o.id=d.id;return o;});}
 function loaded(){
-  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});route();});
-  db.collection("photos").onSnapshot(function(s){state.photos=snap(s);route();});
-  db.collection("comics").onSnapshot(function(s){state.comics=snap(s);route();});
+  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});refresh();});
+  db.collection("photos").onSnapshot(function(s){state.photos=snap(s);refresh();});
+  db.collection("comics").onSnapshot(function(s){state.comics=snap(s);refresh();});
   db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")route();});
+  db.collection("likes").onSnapshot(function(s){state.likes=snap(s);if((location.hash||"#home")==="#home")refresh();});
+  db.collection("chat").onSnapshot(function(s){state.chat=snap(s);renderChat();},{limit:100});
 }
 (function(){
   var C=window.SITE||{};

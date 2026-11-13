@@ -10,6 +10,23 @@ service cloud.firestore {
         && request.resource.data.text.size() <= 500;
       allow delete: if request.auth != null && request.auth.token.email == 'david.d.rodriguez0804@gmail.com';
     }
+    // Live chat: anyone can send a message (with limits); only the admin can delete
+    match /chat/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['name','text','ts'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && request.resource.data.text is string && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 300;
+      allow delete: if request.auth != null && request.auth.token.email == 'david.d.rodriguez0804@gmail.com';
+    }
+    // Likes: one per visitor per photo
+    match /likes/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['pid','vid','ts'])
+        && request.resource.data.pid is string && request.resource.data.vid is string
+        && id == request.resource.data.pid + '_' + request.resource.data.vid;
+      allow delete: if true;
+    }
     // Photos, comic pages and settings: only the admin can change them
     match /{col}/{id} {
       allow read: if true;
