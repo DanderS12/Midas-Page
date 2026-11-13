@@ -66,16 +66,17 @@ audio{width:100%;margin:12px 0}
 <div id="bar"><span id="bt"></span><audio id="au" controls loop preload="auto"></audio></div>
 
 <div class="wrap">
-  <header><img class="corner" id="cr" src="/_blob/bfed15895538fb657433ee42c93e9a5b" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1 class="gold">The Midas Room</h1><p class="sub">A private gallery of golden moments</p></header>
+  <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1 class="gold">The Midas Room</h1><p class="sub">A private gallery of golden moments</p></header>
   <nav id="nav">
-    <a href="#home">Gallery</a><a href="#comic">Comic</a><a href="#story">Story</a><a href="#give">Donate</a><a href="#admin">Admin</a>
+    <a href="#home">Gallery</a><a href="#comic">Comic</a><a href="#story">Story</a><a href="#give">Donate</a>
   </nav>
   <main id="view"></main>
 </div>
 
+<script src="config.js"></script>
 <script>
 (function(){
-var PW="gold";
+var PW="gold",APW="Dander_Midas";
 var state={photos:[],comments:[],comics:[],settings:{}};
 var db=null,assets=null,view=document.getElementById("view");
 var isAdmin=false;
@@ -103,15 +104,15 @@ function zoom(u){lb.querySelector("img").src=u;lb.style.display="flex";}
 /* ---------- routing ---------- */
 function route(){
   var r=(location.hash||"#home").slice(1);
-  if(["home","comic","story","give","admin"].indexOf(r)<0)r="home";
+  if(["home","comic","story","give"].indexOf(r)<0)r="home";
   document.querySelectorAll("#nav a").forEach(function(a){a.classList.toggle("on",a.getAttribute("href")==="#"+r);});
   view.innerHTML="";
   ({home:pHome,comic:pComic,story:pStory,give:pGive,admin:pAdmin})[r]();
   setSong({home:1,comic:2,story:3,give:4,admin:5}[r]||0);
   var cr=document.getElementById("cr");
-  var pics={give:["e84e93d36ecdc2f7ab66ae4ac2f14a39","50% 12%"],story:["cc85f2227d5091e9154517e1f238c744","22% 18%"],comic:["d24070e478f488b6b1bd844020346dd2","30% 12%"]};
-  var pk=pics[r]||["bfed15895538fb657433ee42c93e9a5b","top"];
-  cr.src="/_blob/"+pk[0];
+  var pics={give:["media/corner2.jpg","50% 12%"],story:["media/corner3.jpg","22% 18%"],comic:["media/corner4.jpg","30% 12%"]};
+  var pk=pics[r]||["media/corner1.jpg","top"];
+  cr.src=pk[0];
   cr.style.objectPosition=pk[1];
 }
 window.addEventListener("hashchange",route);
@@ -130,26 +131,7 @@ function pHome(){
   });
   c.appendChild(g);view.appendChild(c);
 
-  var cc=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Comments"})]);
-  var nm=h("input",{placeholder:"Your name",maxlength:"40"});nm.value=lstore("midas-name")||"";
-  var tx=h("textarea",{placeholder:"Leave a golden word…",rows:"3",maxlength:"500"});
-  var er=h("div",{"class":"err"});
-  cc.appendChild(nm);cc.appendChild(tx);cc.appendChild(er);
-  cc.appendChild(h("button",{text:"Post comment",onclick:function(){
-    var t=tx.value.trim();if(!t)return;
-    if(!db){er.textContent="Comments need you to be signed in to claude.ai.";return;}
-    lstore("midas-name",nm.value);
-    var id="c"+Date.now()+Math.random().toString(36).slice(2,6);
-    db.collection("comments").doc(id).set({name:nm.value.trim()||"Guest",text:t,ts:Date.now()}).then(function(){tx.value="";er.textContent="";}).catch(function(e){er.textContent="Could not post: "+(e&&e.message||"error");});
-  }}));
-  var list=h("div",{style:"margin-top:14px"});
-  state.comments.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(m){
-    var row=h("div",{"class":"cm"},[h("b",{text:m.name}),h("small",{text:new Date(m.ts).toLocaleString()}),h("p",{text:m.text})]);
-    if(isAdmin)row.appendChild(h("button",{"class":"del",text:"Delete",onclick:function(){db.collection("comments").doc(m.id).delete();}}));
-    list.appendChild(row);
-  });
-  if(!state.comments.length)list.appendChild(h("p",{"class":"muted",text:"No comments yet. Be the first."}));
-  cc.appendChild(list);view.appendChild(cc);
+
 }
 function delPhoto(p){
   if(!confirm("Delete this photo for good?"))return;
@@ -228,7 +210,7 @@ function saveSettings(patch){
 function pAdmin(){
   if(!isAdmin){
     var er=h("div",{"class":"err"}),pw=h("input",{type:"password",placeholder:"Admin password"});
-    var go=function(){if(pw.value===PW){isAdmin=true;store("midas-admin","1");route();}else er.textContent="Wrong password.";};
+    var go=function(){if(pw.value===APW){isAdmin=true;store("midas-admin","1");route();}else er.textContent="Wrong password.";};
     pw.addEventListener("keydown",function(e){if(e.key==="Enter")go();});
     view.appendChild(h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"Admin Login"}),pw,er,h("button",{text:"Log in",onclick:go})]));
     return;
@@ -301,13 +283,13 @@ function loaded(){
   db.collection("comics").onSnapshot(function(s){state.comics=snap(s);route();});
   db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")route();});
 }
-(async function(){
-  try{
-    if(window.claude&&claude.use){
-      db=await claude.use("db");assets=await claude.use("assets");
-      if(db)loaded();
-    }
-  }catch(e){}
+(function(){
+  var C=window.SITE||{};
+  state.settings=C.settings||{};
+  state.settings.donate=C.donate||"";state.settings.donmsg=C.donmsg||"";
+  var P=C.photos||[],K=C.comics||[];
+  state.photos=P.map(function(p,i){return {id:"p"+i,url:p.file,cap:p.cap||"",ts:P.length-i};});
+  state.comics=K.map(function(p,i){return {id:"k"+i,url:p.file,cap:p.cap||"",ts:i};});
 })();
 
 /* ---------- glitter ---------- */
