@@ -68,12 +68,57 @@ audio{width:100%;margin:12px 0}
 <div class="wrap">
   <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1 class="gold">The Midas Room</h1><p class="sub">A private gallery of golden moments</p></header>
   <nav id="nav">
-    <a href="#home">Gallery</a><a href="#comic">Comic</a><a href="#story">Story</a><a href="#give">Donate</a>
+    <a href="#home">Gallery</a><a href="#comic">Comic</a><a href="#story">Story</a><a href="#give">Donate</a><a href="#admin">Admin</a>
   </nav>
   <main id="view"></main>
 </div>
 
 <script src="config.js"></script>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+const C=window.SITE||{};
+function shrink(file){
+  return new Promise(function(res,rej){
+    const img=new Image(),u=URL.createObjectURL(file);
+    img.onload=function(){
+      let w=img.width,h=img.height,m=Math.max(w,h),mx=900;
+      if(m>mx){w=Math.round(w*mx/m);h=Math.round(h*mx/m);}
+      const cv=document.createElement("canvas");cv.width=w;cv.height=h;
+      cv.getContext("2d").drawImage(img,0,0,w,h);
+      let q=0.75,d=cv.toDataURL("image/jpeg",q);
+      while(d.length>850000&&q>0.3){q-=0.1;d=cv.toDataURL("image/jpeg",q);}
+      URL.revokeObjectURL(u);
+      if(d.length>900000)rej(new Error("Picture is too big"));else res(d);
+    };
+    img.onerror=function(){rej(new Error("Could not read that picture"));};
+    img.src=u;
+  });
+}
+if(C.firebase&&C.firebase.apiKey){
+  const app=initializeApp(C.firebase),fs=getFirestore(app),au=getAuth(app);
+  const wd=function(ref){return {
+    set:function(d){return setDoc(ref,d);},
+    delete:function(){return deleteDoc(ref);},
+    onSnapshot:function(cb){return onSnapshot(ref,function(s){cb({exists:s.exists(),data:function(){return s.data();}});});}
+  };};
+  window.FB={
+    db:{
+      collection:function(n){return {
+        doc:function(id){return wd(doc(fs,n,id));},
+        onSnapshot:function(cb){return onSnapshot(collection(fs,n),function(s){cb({docs:s.docs.map(function(d){return {id:d.id,data:function(){return d.data();}};})});});}
+      };},
+      doc:function(p){return wd(doc(fs,...p.split("/")));}
+    },
+    assets:{upload:function(f){return shrink(f).then(function(u){return {url:u,id:""};});},delete:function(){return Promise.resolve();}},
+    login:function(pw){return signInWithEmailAndPassword(au,C.adminEmail,pw);},
+    logout:function(){return signOut(au);},
+    onAuth:function(cb){return onAuthStateChanged(au,cb);}
+  };
+  dispatchEvent(new Event("fb-ready"));
+}
+</script>
 <script>
 (function(){
 var PW="gold",APW="Dander_Midas";
@@ -94,7 +139,7 @@ function tryGate(){
 document.getElementById("gbtn").onclick=tryGate;
 document.getElementById("gp").addEventListener("keydown",function(e){if(e.key==="Enter")tryGate();});
 if(store("midas-in")==="1")gate.style.display="none";
-isAdmin=store("midas-admin")==="1";
+isAdmin=false;
 
 /* ---------- lightbox ---------- */
 var lb=document.getElementById("lb");
@@ -104,7 +149,7 @@ function zoom(u){lb.querySelector("img").src=u;lb.style.display="flex";}
 /* ---------- routing ---------- */
 function route(){
   var r=(location.hash||"#home").slice(1);
-  if(["home","comic","story","give"].indexOf(r)<0)r="home";
+  if(["home","comic","story","give","admin"].indexOf(r)<0)r="home";
   document.querySelectorAll("#nav a").forEach(function(a){a.classList.toggle("on",a.getAttribute("href")==="#"+r);});
   view.innerHTML="";
   ({home:pHome,comic:pComic,story:pStory,give:pGive,admin:pAdmin})[r]();
@@ -131,7 +176,26 @@ function pHome(){
   });
   c.appendChild(g);view.appendChild(c);
 
-
+  var cc=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Comments"})]);
+  var nm=h("input",{placeholder:"Your name",maxlength:"40"});nm.value=lstore("midas-name")||"";
+  var tx=h("textarea",{placeholder:"Leave a golden word…",rows:"3",maxlength:"500"});
+  var er=h("div",{"class":"err"});
+  cc.appendChild(nm);cc.appendChild(tx);cc.appendChild(er);
+  cc.appendChild(h("button",{text:"Post comment",onclick:function(){
+    var t=tx.value.trim();if(!t)return;
+    if(!db){er.textContent="Comments are not connected yet.";return;}
+    lstore("midas-name",nm.value);
+    var id="c"+Date.now()+Math.random().toString(36).slice(2,6);
+    db.collection("comments").doc(id).set({name:nm.value.trim()||"Guest",text:t,ts:Date.now()}).then(function(){tx.value="";er.textContent="";}).catch(function(e){er.textContent="Could not post: "+(e&&e.message||"error");});
+  }}));
+  var list=h("div",{style:"margin-top:14px"});
+  state.comments.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(m){
+    var row=h("div",{"class":"cm"},[h("b",{text:m.name}),h("small",{text:new Date(m.ts).toLocaleString()}),h("p",{text:m.text})]);
+    if(isAdmin)row.appendChild(h("button",{"class":"del",text:"Delete",onclick:function(){db.collection("comments").doc(m.id).delete();}}));
+    list.appendChild(row);
+  });
+  if(!state.comments.length)list.appendChild(h("p",{"class":"muted",text:"No comments yet. Be the first."}));
+  cc.appendChild(list);view.appendChild(cc);
 }
 function delPhoto(p){
   if(!confirm("Delete this photo for good?"))return;
@@ -210,13 +274,13 @@ function saveSettings(patch){
 function pAdmin(){
   if(!isAdmin){
     var er=h("div",{"class":"err"}),pw=h("input",{type:"password",placeholder:"Admin password"});
-    var go=function(){if(pw.value===APW){isAdmin=true;store("midas-admin","1");route();}else er.textContent="Wrong password.";};
+    var go=function(){if(!window.FB){er.textContent="Firebase is not connected yet.";return;}er.textContent="";FB.login(pw.value).catch(function(){er.textContent="Wrong password.";});};
     pw.addEventListener("keydown",function(e){if(e.key==="Enter")go();});
     view.appendChild(h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"Admin Login"}),pw,er,h("button",{text:"Log in",onclick:go})]));
     return;
   }
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Admin"}),
-    h("button",{"class":"del",text:"Log out",onclick:function(){isAdmin=false;store("midas-admin","");route();}})]);
+    h("button",{"class":"del",text:"Log out",onclick:function(){FB.logout();}})]);
   var msg=h("div",{"class":"note"});
   function say(t){msg.textContent=t;}
 
@@ -225,7 +289,7 @@ function pAdmin(){
   var cap=h("input",{placeholder:"Caption (optional)"});
   c.appendChild(fi);c.appendChild(cap);
   c.appendChild(h("button",{text:"Upload photos",onclick:async function(){
-    if(!assets||!db){say("Uploading needs you to be the signed-in owner on claude.ai.");return;}
+    if(!assets||!db){say("Firebase is not connected yet.");return;}
     for(var i=0;i<fi.files.length;i++){
       try{say("Uploading "+(i+1)+" of "+fi.files.length+"…");
         var r=await assets.upload(fi.files[i]);
@@ -240,7 +304,7 @@ function pAdmin(){
   var cf=h("input",{type:"file",accept:"image/*",multiple:"multiple"});
   c.appendChild(cf);
   c.appendChild(h("button",{text:"Upload comic pages",onclick:async function(){
-    if(!assets||!db){say("Uploading needs you to be the signed-in owner on claude.ai.");return;}
+    if(!assets||!db){say("Firebase is not connected yet.");return;}
     for(var i=0;i<cf.files.length;i++){
       try{say("Uploading page "+(i+1)+" of "+cf.files.length+"…");
         var r=await assets.upload(cf.files[i]);
@@ -250,19 +314,6 @@ function pAdmin(){
     cf.value="";say("Done! Comic pages added.");
   }}));
 
-  [1,2,3,4,5].forEach(function(n){
-    c.appendChild(h("label",{text:["Gallery","Comic","Story","Donate","Admin"][n-1]+" page song title"}));
-    var t=h("input",{placeholder:"Song "+n});t.value=state.settings["title"+n]||"";
-    var f=h("input",{type:"file",accept:"audio/*,video/mp4,video/webm"});
-    c.appendChild(t);c.appendChild(f);
-    c.appendChild(h("button",{text:"Save song "+n,onclick:async function(){
-      try{var p={};p["title"+n]=t.value;
-        if(f.files[0]){say("Uploading song…");var r=await assets.upload(f.files[0]);p["song"+n]=r.url;}
-        await saveSettings(p);say("Song "+n+" saved.");
-      }catch(e){say("Could not save: "+(e&&e.message||"error")+". If the file type was refused, try an .mp4 or .webm version of the song.");}
-    }}));
-  });
-
   c.appendChild(h("label",{text:"Donation link (https://…)"}));
   var dl=h("input",{placeholder:"https://your-donation-page"});dl.value=state.settings.donate||"";
   var dm=h("input",{placeholder:"Message above the donate button"});dm.value=state.settings.donmsg||"";
@@ -271,25 +322,23 @@ function pAdmin(){
     if(dl.value&&!/^https:\/\//i.test(dl.value)){say("The link must start with https://");return;}
     saveSettings({donate:dl.value.trim(),donmsg:dm.value}).then(function(){say("Saved.");}).catch(function(e){say("Could not save: "+(e&&e.message||"error"));});
   }}));
-  c.appendChild(h("p",{"class":"note",text:"Delete buttons now show on the Gallery page next to every photo and comment. To share the site, use Share in claude.ai and invite people; the site stays private until you do."}));
+  c.appendChild(h("p",{"class":"note",text:"Delete buttons show on the Gallery, Comic and comment areas while you are logged in. Songs are set in config.js."}));
   c.appendChild(msg);view.appendChild(c);
 }
 
 /* ---------- data ---------- */
 function snap(s){return s.docs.map(function(d){var o=d.data();o.id=d.id;return o;});}
 function loaded(){
-  db.doc("settings/site").onSnapshot(function(s){state.settings=(s.exists&&s.data())||{};route();});
+  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});route();});
   db.collection("photos").onSnapshot(function(s){state.photos=snap(s);route();});
   db.collection("comics").onSnapshot(function(s){state.comics=snap(s);route();});
   db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")route();});
 }
 (function(){
   var C=window.SITE||{};
-  state.settings=C.settings||{};
-  state.settings.donate=C.donate||"";state.settings.donmsg=C.donmsg||"";
-  var P=C.photos||[],K=C.comics||[];
-  state.photos=P.map(function(p,i){return {id:"p"+i,url:p.file,cap:p.cap||"",ts:P.length-i};});
-  state.comics=K.map(function(p,i){return {id:"k"+i,url:p.file,cap:p.cap||"",ts:i};});
+  state.settings=Object.assign({},C.settings||{});
+  function start(){db=FB.db;assets=FB.assets;loaded();FB.onAuth(function(u){isAdmin=!!u;route();});}
+  if(window.FB)start();else addEventListener("fb-ready",start);
 })();
 
 /* ---------- glitter ---------- */
