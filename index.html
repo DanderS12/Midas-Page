@@ -63,6 +63,13 @@ audio{width:100%;margin:12px 0}
 .vrow .dot{width:12px;height:12px;border-radius:50%;background:#5a4a2a;flex:none}
 .vrow.speak{border-color:var(--gold);box-shadow:0 0 12px rgba(245,197,66,.6)}
 .vrow.speak .dot{background:#6dff8a}
+#menubtn{display:none}
+@media (max-width:720px){
+  #menubtn{display:inline-block;width:100%}
+  nav a{display:none}
+  nav.open a{display:block;width:100%;text-align:center}
+  nav.open{max-height:75vh;overflow-y:auto}
+}
 .storybox{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
 .storypics{flex:0 1 260px;max-width:100%;display:flex;flex-direction:column;gap:12px}
 .storypics .ph img{aspect-ratio:auto;object-fit:contain;max-height:420px;background:#000}
@@ -92,6 +99,7 @@ select{width:100%;padding:10px;background:#0e0a04;color:var(--text);border:1px s
 <div class="wrap">
   <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1><span>👑</span> <span class="gold">The Midas Room</span> <span>👑</span></h1><p class="sub">A private gallery of golden moments</p></header>
   <nav id="nav">
+    <button id="menubtn" type="button">☰ Menu</button>
     <a href="#home">✨ Gallery</a><a href="#comic">📜 Comic</a><a href="#story">👑 Story</a><a href="#chat">💬 Live Chat</a><a href="#login">🔐 Login</a><a href="#rooms">🏆 Rooms</a><a href="#dm">💌 Messages</a><a href="#voice">🎙️ Voice</a><a href="#settings">⚙️ Settings</a><a href="#nsfw">🔞 18+</a><a href="#give">🪙 Donate</a><a href="#admin">🔑 Admin</a>
   </nav>
   <main id="view"></main>
@@ -101,7 +109,7 @@ select{width:100%;padding:10px;background:#0e0a04;color:var(--text);border:1px s
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,query,orderBy,limit,where,updateDoc} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import {getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,sendPasswordResetEmail,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 const onSnap=function(ref,next){return onSnapshot(ref,next,function(e){if(window.fbError)window.fbError(e);});};
 const C=window.SITE||{};
 function shrink(file){
@@ -140,6 +148,7 @@ if(C.firebase&&C.firebase.apiKey){
     assets:{upload:function(f){return shrink(f).then(function(u){return {url:u,id:""};});},delete:function(){return Promise.resolve();}},
     login:function(pw){return signInWithEmailAndPassword(au,C.adminEmail,pw);},
     signin:function(e,pw){return signInWithEmailAndPassword(au,e,pw);},
+    reset:function(e){return sendPasswordResetEmail(au,e);},
     signup:function(e,pw){return createUserWithEmailAndPassword(au,e,pw);},
     logout:function(){return signOut(au);},
     onAuth:function(cb){return onAuthStateChanged(au,cb);}
@@ -198,6 +207,13 @@ function route(){
   cr.src=pk[0];
   cr.style.objectPosition=pk[1];
 }
+(function(){
+  var nv=document.getElementById("nav"),mb=document.getElementById("menubtn");
+  function shut(){nv.classList.remove("open");mb.textContent="☰ Menu";}
+  mb.addEventListener("click",function(e){e.stopPropagation();var o=nv.classList.toggle("open");mb.textContent=o?"✕ Close menu":"☰ Menu";});
+  nv.addEventListener("click",function(e){if(e.target.tagName==="A")shut();});
+  document.addEventListener("click",function(e){if(!nv.contains(e.target))shut();});
+})();
 window.addEventListener("hashchange",route);
 
 /* ---------- gallery + comments ---------- */
@@ -332,18 +348,25 @@ function pLogin(){
 }
 function setNav(){var a=document.querySelector('#nav a[href="#login"]');if(a)a.textContent=me?"👤 Account":"🔐 Login";}
 function authCard(){
-  var em=h("input",{type:"email",placeholder:"Email"}),pw=h("input",{type:"password",placeholder:"Password (6+ characters)"}),nm=h("input",{placeholder:"Room name (for new accounts)",maxlength:"40"}),er=h("div",{"class":"err"});
+  var em=h("input",{type:"email",placeholder:"Email"}),pw=h("input",{type:"password",placeholder:"Password (6+ characters)"}),nm=h("input",{placeholder:"Room name (for new accounts)",maxlength:"40"}),er=h("div",{"class":"err"}),ok=h("div",{"class":"note"});
   function fail(e){var c=(e&&e.code)||"";er.textContent=c==="auth/email-already-in-use"?"That email already has an account. Try Log in.":c==="auth/weak-password"?"The password needs at least 6 characters.":c==="auth/invalid-email"?"That email does not look right.":(c==="auth/invalid-credential"||c==="auth/wrong-password"||c==="auth/user-not-found")?"Wrong email or password.":"Something went wrong: "+((e&&e.message)||"error");}
   return h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"Your Own Golden Room"}),
     h("p",{"class":"muted",text:"Log in or create an account to get your own room, send private messages and join the voice room."}),
-    em,pw,nm,er,
+    em,pw,nm,er,ok,
     h("button",{text:"Log in",onclick:function(){if(!window.FB){er.textContent="Accounts are not connected yet.";return;}er.textContent="";FB.signin(em.value.trim(),pw.value).catch(fail);}}),
     h("span",{text:"  "}),
     h("button",{text:"Create account",onclick:function(){
       if(!window.FB){er.textContent="Accounts are not connected yet.";return;}
       er.textContent="";
       FB.signup(em.value.trim(),pw.value).then(function(cr){var u=cr.user;return db.collection("users").doc(u.uid).set({uid:u.uid,name:(nm.value.trim()||"Golden Guest").slice(0,40),story:"",accent:"#f5c542",bg:"#0b0805",panel:"#17110a",text:"#f3e6c4",border:"#c8921b",btn:"#f5c542",gs:"sparkle",gc:"#ffd24a",ps:"paws",pc:"#e8b230",song:"",songTitle:"",ts:Date.now()});}).catch(fail);
-    }})]);
+    }}),
+    h("p",{style:"margin-top:14px"},[h("a",{href:"#login",style:"color:var(--gold);cursor:pointer",text:"Forgot password?",onclick:function(e){
+      e.preventDefault();er.textContent="";ok.textContent="";
+      if(!window.FB){er.textContent="Accounts are not connected yet.";return;}
+      var m=em.value.trim();
+      if(!m){er.textContent="Type your email in the box above first, then tap Forgot password again.";return;}
+      FB.reset(m).then(function(){ok.textContent="If that email has an account, a reset link is on its way. Check your spam folder too.";}).catch(fail);
+    }})])]);
 }
 function photoGrid(el,docs,mine){
   el.innerHTML="";
@@ -945,7 +968,13 @@ function pAdmin(){
     var er=h("div",{"class":"err"}),pw=h("input",{type:"password",placeholder:"Admin password"});
     var go=function(){if(!window.FB){er.textContent="Firebase is not connected yet.";return;}er.textContent="";FB.login(pw.value).catch(function(){er.textContent="Wrong password.";});};
     pw.addEventListener("keydown",function(e){if(e.key==="Enter")go();});
-    view.appendChild(h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"Admin Login"}),pw,er,h("button",{text:"Log in",onclick:go})]));
+    view.appendChild(h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"Admin Login"}),pw,er,h("button",{text:"Log in",onclick:go}),
+      h("p",{style:"margin-top:14px"},[h("a",{href:"#admin",style:"color:var(--gold);cursor:pointer",text:"Forgot admin password?",onclick:function(e){
+        e.preventDefault();
+        var ae=(window.SITE||{}).adminEmail;
+        if(!window.FB||!ae){er.textContent="Not connected yet.";return;}
+        FB.reset(ae).then(function(){er.style.color="var(--gold)";er.textContent="A reset link was sent to the admin email. Check spam too.";}).catch(function(){er.textContent="Could not send the reset email.";});
+      }})])]));
     return;
   }
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Admin"}),
