@@ -5,13 +5,18 @@ service cloud.firestore {
     function isAdmin() {
       return request.auth != null && request.auth.token.email == 'david.d.rodriguez0804@gmail.com';
     }
+    function hex(c) {
+      return c is string && c.matches('^#[0-9a-fA-F]{6}$');
+    }
     function okUser(d) {
-      return d.keys().hasOnly(['uid','name','story','accent','bg','panel','text','song','songTitle','ts'])
+      return d.keys().hasOnly(['uid','name','story','accent','bg','panel','text','border','btn','gc','pc','gs','ps','song','songTitle','ts'])
         && d.uid == request.auth.uid
         && d.name is string && d.name.size() <= 40
         && d.story is string && d.story.size() <= 4000
-        && d.accent.matches('^#[0-9a-fA-F]{6}$') && d.bg.matches('^#[0-9a-fA-F]{6}$')
-        && d.panel.matches('^#[0-9a-fA-F]{6}$') && d.text.matches('^#[0-9a-fA-F]{6}$')
+        && hex(d.accent) && hex(d.bg) && hex(d.panel) && hex(d.text)
+        && hex(d.border) && hex(d.btn) && hex(d.gc) && hex(d.pc)
+        && d.gs in ['sparkle','dots','stars','hearts','flowers','snow','none']
+        && d.ps in ['paws','hearts','stars','flowers','snow','none']
         && d.song is string && d.song.size() <= 300
         && d.songTitle is string && d.songTitle.size() <= 60;
     }
