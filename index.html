@@ -78,7 +78,7 @@ select{width:100%;padding:10px;background:#0e0a04;color:var(--text);border:1px s
 <div class="wrap">
   <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1><span>👑</span> <span class="gold">The Midas Room</span> <span>👑</span></h1><p class="sub">A private gallery of golden moments</p></header>
   <nav id="nav">
-    <a href="#home">✨ Gallery</a><a href="#comic">📜 Comic</a><a href="#story">👑 Story</a><a href="#chat">💬 Live Chat</a><a href="#rooms">🏆 Rooms</a><a href="#dm">💌 Messages</a><a href="#voice">🎙️ Voice</a><a href="#settings">⚙️ Settings</a><a href="#nsfw">🔞 18+</a><a href="#give">🪙 Donate</a><a href="#admin">🔑 Admin</a>
+    <a href="#home">✨ Gallery</a><a href="#comic">📜 Comic</a><a href="#story">👑 Story</a><a href="#chat">💬 Live Chat</a><a href="#login">🔐 Login</a><a href="#rooms">🏆 Rooms</a><a href="#dm">💌 Messages</a><a href="#voice">🎙️ Voice</a><a href="#settings">⚙️ Settings</a><a href="#nsfw">🔞 18+</a><a href="#give">🪙 Donate</a><a href="#admin">🔑 Admin</a>
   </nav>
   <main id="view"></main>
 </div>
@@ -135,7 +135,7 @@ if(C.firebase&&C.firebase.apiKey){
 <script>
 (function(){
 var PW="gold",APW="Dander_Midas";
-var state={photos:[],comments:[],comics:[],likes:[],chat:[],users:[],dmIn:[],dmOut:[],voice:{},stories:[],myStories:[],adult:false,adults:[],nsfw:[],settings:{}};
+var state={photos:[],comments:[],comics:[],likes:[],chat:[],users:[],dmIn:[],dmOut:[],voice:{},age:{},stories:[],myStories:[],adult:false,adults:[],nsfw:[],settings:{}};
 var db=null,assets=null,view=document.getElementById("view");
 var isAdmin=false,me=null;
 
@@ -163,12 +163,12 @@ function zoom(u){lb.querySelector("img").src=u;lb.style.display="flex";}
 function route(){
   var r=(location.hash||"#home").slice(1),rid=null;
   if(r.indexOf("room-")===0){rid=r.slice(5);r="room";}
-  if(["home","comic","story","chat","rooms","settings","nsfw","room","dm","voice","give","admin"].indexOf(r)<0)r="home";
+  if(["home","comic","story","chat","login","rooms","settings","nsfw","room","dm","voice","give","admin"].indexOf(r)<0)r="home";
   if(roomUnsub){try{roomUnsub();}catch(e){}roomUnsub=null;}
   roomSong=null;roomFx=null;
   document.querySelectorAll("#nav a").forEach(function(a){a.classList.toggle("on",a.getAttribute("href")==="#"+(r==="room"?"rooms":r));});
   view.innerHTML="";
-  ({home:pHome,comic:pComic,story:pStory,chat:pChat,rooms:pRooms,settings:pMyRoom,nsfw:pNsfw,room:function(){pRoom(rid);},dm:pDM,voice:pVoice,give:pGive,admin:pAdmin})[r]();
+  ({home:pHome,comic:pComic,story:pStory,chat:pChat,rooms:pRooms,login:pLogin,settings:pMyRoom,nsfw:pNsfw,room:function(){pRoom(rid);},dm:pDM,voice:pVoice,give:pGive,admin:pAdmin})[r]();
   setFx(roomFx);
   if(roomSong)setSong(100,roomSong.url,roomSong.title);else setSong({home:1,comic:2,story:3,give:4,admin:5}[r]||0);
   var cr=document.getElementById("cr");
@@ -263,7 +263,7 @@ function pComic(){
 }
 
 /* ---------- accounts, rooms, messages, voice ---------- */
-var roomUnsub=null,roomSong=null,roomFx=null,roomTrack={},stTab="midas",stEdit=null,nsfwSub=false,dmUnsubs=[],dmWith="",dmBox=null,dmForm=null;
+var roomUnsub=null,roomSong=null,roomFx=null,roomTrack={},stTab="midas",stEdit=null,stNewId=null,storyTrack={},afterLogin="",nsfwSub=false,dmUnsubs=[],dmWith="",dmBox=null,dmForm=null;
 var EMO=["👑","✨","🌟","💛","🪙","🏆","🥇","⭐","💫","🍯","🔱","🐾"];
 function emojiBar(inp){var d=h("div",{"class":"eb"});EMO.forEach(function(e){d.appendChild(h("button",{type:"button",text:e,onclick:function(){inp.value+=e;inp.focus();}}));});return d;}
 function isHex(c){return /^#[0-9a-fA-F]{6}$/.test(c||"");}
@@ -283,18 +283,31 @@ function onAuthChange(u){
   me=u?{uid:u.uid,email:u.email}:null;
   isAdmin=!!(u&&ae&&u.email&&u.email.toLowerCase()===ae.toLowerCase());
   dmUnsubs.forEach(function(f){try{f();}catch(e){}});dmUnsubs=[];
-  state.users=[];state.dmIn=[];state.dmOut=[];state.voice={};state.myStories=[];state.adult=false;state.adults=[];state.nsfw=[];nsfwSub=false;
+  state.users=[];state.dmIn=[];state.dmOut=[];state.voice={};state.age={};state.myStories=[];state.adult=false;state.adults=[];state.nsfw=[];nsfwSub=false;
   if(me&&db){
     dmUnsubs.push(db.collection("users").onSnapshot(function(s){state.users=snap(s);refresh();}));
     dmUnsubs.push(db.collection("dms").onSnapshot(function(s){state.dmIn=snap(s);renderDM();},{where:["to","==",me.uid]}));
     dmUnsubs.push(db.collection("dms").onSnapshot(function(s){state.dmOut=snap(s);renderDM();},{where:["from","==",me.uid]}));
     dmUnsubs.push(db.doc("private/voice").onSnapshot(function(s){state.voice=(s.exists&&s.data())||{};refresh();}));
-    dmUnsubs.push(db.collection("stories").onSnapshot(function(s){state.myStories=snap(s);refresh();},{where:["owner","==",me.uid]}));
+    dmUnsubs.push(db.doc("private/age").onSnapshot(function(s){state.age=(s.exists&&s.data())||{};refresh();}));
     dmUnsubs.push(db.doc("adults/"+me.uid).onSnapshot(function(s){state.adult=!!s.exists;watchNsfw();refresh();}));
     if(isAdmin){dmUnsubs.push(db.collection("adults").onSnapshot(function(s){state.adults=snap(s);refresh();}));watchNsfw();}
   }
+  setNav();
+  if(me&&(location.hash||"")==="#login"&&afterLogin&&afterLogin!=="#login"){location.hash=afterLogin;}
   route();
 }
+function needLogin(){
+  afterLogin=location.hash||"#home";
+  view.appendChild(h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"Please log in"}),h("p",{"class":"muted",text:"This part of the site is for members."}),h("a",{"class":"btn",href:"#login",text:"🔐 Go to Login"})]));
+}
+function pLogin(){
+  if(!me){view.appendChild(authCard());return;}
+  var p=profile(me.uid);
+  view.appendChild(h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"👤 Account"}),h("p",{text:"Signed in as "+me.email+(p&&p.name?" ("+p.name+")":"")}),
+    h("a",{"class":"btn",href:"#settings",text:"⚙️ Settings"}),h("span",{text:"  "}),h("a",{"class":"btn",href:"#room-"+me.uid,text:"My room"}),h("span",{text:"  "}),h("button",{text:"Log out",onclick:function(){FB.logout();}})]));
+}
+function setNav(){var a=document.querySelector('#nav a[href="#login"]');if(a)a.textContent=me?"👤 Account":"🔐 Login";}
 function authCard(){
   var em=h("input",{type:"email",placeholder:"Email"}),pw=h("input",{type:"password",placeholder:"Password (6+ characters)"}),nm=h("input",{placeholder:"Room name (for new accounts)",maxlength:"40"}),er=h("div",{"class":"err"});
   function fail(e){var c=(e&&e.code)||"";er.textContent=c==="auth/email-already-in-use"?"That email already has an account. Try Log in.":c==="auth/weak-password"?"The password needs at least 6 characters.":c==="auth/invalid-email"?"That email does not look right.":(c==="auth/invalid-credential"||c==="auth/wrong-password"||c==="auth/user-not-found")?"Wrong email or password.":"Something went wrong: "+((e&&e.message)||"error");}
@@ -321,7 +334,7 @@ function photoGrid(el,docs,mine){
   if(!el.children.length)el.appendChild(h("p",{"class":"muted",text:"No photos yet."}));
 }
 function pRooms(){
-  if(!me){view.appendChild(authCard());return;}
+  if(!me){needLogin();return;}
   var p=profile(me.uid);
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Rooms"}),
     h("p",{text:"Welcome"+(p?", "+p.name:"")+"! Every member has their own room with their own story, photos, song and colors. Your room never changes the main site."}),
@@ -336,7 +349,7 @@ function pRooms(){
   view.appendChild(g);
 }
 function pMyRoom(){
-  if(!me){view.appendChild(authCard());return;}
+  if(!me){needLogin();return;}
   var p=profile(me.uid)||{};
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"⚙️ Settings"}),h("p",{"class":"note",text:"Signed in as "+me.email+". Everything here only changes your own account and your own room."}),h("a",{"class":"btn",href:"#room-"+me.uid,text:"View my room"}),h("span",{text:"  "}),h("button",{text:"Log out",onclick:function(){FB.logout();}})]);
   var nm=h("input",{maxlength:"40",placeholder:"Room name"});nm.value=p.name||"";
@@ -406,7 +419,7 @@ function pMyRoom(){
   }
 }
 function pRoom(uid){
-  if(!me){view.appendChild(authCard());return;}
+  if(!me){needLogin();return;}
   var p=profile(uid);
   if(!p){view.appendChild(h("div",{"class":"card center"},[h("p",{"class":"muted",text:"Looking for this room…"}),h("a",{"class":"btn",href:"#rooms",text:"Back to rooms"})]));return;}
   function hv(k){var v=gv(p,k);return isHex(v)?v:DEFR[k];}
@@ -451,11 +464,17 @@ function watchNsfw(){
   dmUnsubs.push(db.collection("nsfw").onSnapshot(function(s){state.nsfw=snap(s);if((location.hash||"")==="#nsfw")refresh();}));
 }
 function pNsfw(){
-  if(!me){view.appendChild(authCard());return;}
+  if(!me){needLogin();return;}
   var c=h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"🔞 18+ Section"})]);
   if(!(state.adult||isAdmin)){
-    c.appendChild(h("p",{text:"This section is only for adults whose age has been checked by the site owner. Your account has not been approved."}));
-    c.appendChild(h("p",{"class":"note",text:"Nothing is shown here until the owner approves your account. If you are under 18, please leave this page."}));
+    c.appendChild(h("p",{text:"This section is for adults only. Your age must be verified before you can enter."}));
+    c.appendChild(h("p",{"class":"note",text:"Step 1: verify your age with our verification partner."}));
+    var al=state.age&&state.age.link;
+    if(isHttps(al))c.appendChild(h("a",{"class":"btn",href:al,target:"_blank",rel:"noopener noreferrer",text:"Verify my age"}));
+    else c.appendChild(h("p",{"class":"muted",text:"Age verification has not been set up by the owner yet."}));
+    c.appendChild(h("p",{"class":"note",text:"Step 2: this is your Account ID. Use it as the reference when you verify, or send it to the owner so they can match you:"}));
+    c.appendChild(h("input",{value:me.uid,readonly:"readonly",onclick:function(e){e.target.select();}}));
+    c.appendChild(h("p",{"class":"note",text:"Step 3: the owner approves your account after your verification passes, and then this page unlocks. If you are under 18, please leave this page."}));
     view.appendChild(c);return;
   }
   if(store("midas-18")!=="1"){
@@ -488,7 +507,7 @@ function renderDM(){
   dmBox.scrollTop=dmBox.scrollHeight;
 }
 function pDM(){
-  if(!me){view.appendChild(authCard());return;}
+  if(!me){needLogin();return;}
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Private Messages"}),h("p",{"class":"note",text:"Only you and the person you write to can read these."})]);
   var sel=h("select");
   sel.appendChild(h("option",{value:"",text:"Choose someone…"}));
@@ -511,7 +530,7 @@ function pDM(){
   view.appendChild(c);renderDM();
 }
 function pVoice(){
-  if(!me){view.appendChild(authCard());return;}
+  if(!me){needLogin();return;}
   var l=state.voice&&state.voice.link;
   var c=h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"🎙️ Voice Room"})]);
   if(isHttps(l)){
@@ -572,42 +591,160 @@ function pChat(){
 }
 
 /* ---------- story ---------- */
-function storyCard(st,mine){
-  var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:st.title}),h("p",{"class":"note",text:"by "+(st.ownerName||"Member")+(st.vis==="me"?" · only you can see this":"")})]);
-  String(st.text||"").split("\n").forEach(function(l){if(l.trim())c.appendChild(h("p",{text:l,style:"line-height:1.75"}));});
-  function del(){if(confirm("Delete this story?"))db.collection("stories").doc(st.id).delete();}
-  if(mine){c.appendChild(h("button",{text:"Edit",onclick:function(){stEdit=st;route();}}));c.appendChild(h("span",{text:"  "}));c.appendChild(h("button",{"class":"del",text:"Delete",onclick:del}));}
-  else if(isAdmin)c.appendChild(h("button",{"class":"del",text:"Delete",onclick:del}));
-  return c;
+function themeOf(t){
+  t=t||{};
+  function g(k){var d=k==="tx"?DEFR.text:DEFR[k];return (t[k]!=null&&t[k]!=="")?t[k]:d;}
+  function hx(k){var v=g(k);return isHex(v)?v:(k==="tx"?DEFR.text:DEFR[k]);}
+  var ac=hx("accent"),bg=hx("bg"),pn=hx("panel"),tx=hx("tx"),bd=hx("border"),bt=hx("btn"),gs=g("gs"),ps=g("ps");
+  return {style:"--gold:"+ac+";--gold2:"+bd+";--gold3:"+mix(ac,0xffffff,.6)+";--bg:"+bg+";--panel:"+pn+";--text:"+tx+";--muted:"+mix(tx,parseInt(bg.slice(1),16),.45)+";--btn:"+bt+";--btnt:"+(lum(bt)>.55?"#111111":"#ffffff")+";background:"+bg+";color:"+tx,
+    fx:{gs:GV.indexOf(gs)<0?"sparkle":gs,gc:hx("gc"),ps:PV.indexOf(ps)<0?"paws":ps,pc:hx("pc")}};
 }
-function pMemberStories(){
-  var list=state.stories.slice().sort(function(a,b){return b.ts-a.ts;});
-  if(!list.length)view.appendChild(h("div",{"class":"card center"},[h("p",{"class":"muted",text:"No member stories yet. Log in and add yours from the My stories tab."})]));
-  list.forEach(function(st){view.appendChild(storyCard(st,!!me&&st.owner===me.uid));});
+function themeEditor(t){
+  t=t||{};
+  function col(k){var i=h("input",{type:"color"});var v=(t[k]!=null&&t[k]!=="")?t[k]:(k==="tx"?DEFR.text:DEFR[k]);i.value=isHex(v)?v:"#000000";i.style.cssText="width:70px;height:40px;padding:2px";return i;}
+  function sel(opts,v){var e=h("select");opts.forEach(function(o){e.appendChild(h("option",{value:o[0],text:o[1]}));});e.value=v;return e;}
+  var ca=col("accent"),cb=col("bg"),cp=col("panel"),ct=col("tx"),cd=col("border"),cn=col("btn"),cg=col("gc"),cq=col("pc");
+  var gsel=sel(GOPT,t.gs||DEFR.gs),psel=sel(POPT,t.ps||DEFR.ps);
+  var el=h("div",{},[h("label",{text:"Colors for this story"}),h("div",{style:"display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px"},[lp("Headings",ca),lp("Background",cb),lp("Boxes",cp),lp("Text",ct),lp("Borders",cd),lp("Buttons",cn)]),
+    h("label",{text:"Falling effects for this story"}),h("div",{style:"display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px"},[h("div",{style:"flex:1 1 180px"},[h("div",{"class":"note",text:"Sparkle layer"}),gsel]),lp("Color",cg),h("div",{style:"flex:1 1 180px"},[h("div",{"class":"note",text:"Slow falling shapes"}),psel]),lp("Color",cq)])]);
+  return {el:el,get:function(){return {accent:ca.value,bg:cb.value,panel:cp.value,tx:ct.value,border:cd.value,btn:cn.value,gs:gsel.value,gc:cg.value,ps:psel.value,pc:cq.value};}};
 }
-function pMyStories(){
-  if(!me){view.appendChild(authCard());return;}
-  var f=h("div",{"class":"card"},[h("h2",{"class":"gold",text:stEdit?"Edit story":"Add your story"}),h("p",{"class":"note",text:"Only you can edit or delete your stories. Choose who can read each one."})]);
-  var ti=h("input",{placeholder:"Title",maxlength:"80"}),tx=h("textarea",{rows:"10",maxlength:"8000",placeholder:"Write your story…"}),vs=h("select"),er=h("div",{"class":"err"});
-  vs.appendChild(h("option",{value:"all",text:"Everyone can read it"}));vs.appendChild(h("option",{value:"me",text:"Only me"}));
-  if(stEdit){ti.value=stEdit.title;tx.value=stEdit.text;vs.value=stEdit.vis||"all";}
-  f.appendChild(ti);f.appendChild(tx);f.appendChild(emojiBar(tx));f.appendChild(vs);f.appendChild(er);
-  f.appendChild(h("button",{text:stEdit?"Save changes":"Add story",onclick:function(){
-    var t=ti.value.trim(),b=tx.value.trim();if(!t||!b){er.textContent="Add a title and some story text.";return;}
-    var ed=stEdit,id=ed?ed.id:"s"+Date.now()+Math.random().toString(36).slice(2,6);
-    db.collection("stories").doc(id).set({owner:me.uid,ownerName:myName().slice(0,40),title:t,text:b,vis:vs.value,ts:ed?ed.ts:Date.now()}).then(function(){stEdit=null;route();}).catch(function(e){er.textContent="Could not save: "+((e&&e.message)||"error");});
+function storyPics(el,docs){
+  el.innerHTML="";
+  docs.slice().sort(function(a,b){return a.ts-b.ts;}).forEach(function(p){
+    if(!p.img||p.img.indexOf("data:image/jpeg;base64,")!==0)return;
+    var d=h("div",{"class":"ph"},[h("img",{src:p.img,alt:p.cap||"Picture",onclick:function(){zoom(p.img);}})]);
+    if(p.cap)d.appendChild(h("p",{text:p.cap}));
+    if(isAdmin)d.appendChild(h("button",{"class":"del",text:"Delete",onclick:function(){if(confirm("Delete this picture?"))db.collection("spics").doc(p.id).delete();}}));
+    el.appendChild(d);
+  });
+}
+function watchStoryTrack(sid,onMeta,onUrl){
+  var chunkUn=null;
+  var tUn=db.doc("stracks/"+sid).onSnapshot(function(s){
+    if(chunkUn){chunkUn();chunkUn=null;}
+    var m=s.exists&&s.data();
+    onMeta(m||null);
+    if(!m){delete storyTrack[sid];return;}
+    chunkUn=db.collection("schunks").onSnapshot(function(cs){
+      var parts=snap(cs).filter(function(c){return c.tid===m.tid;}).sort(function(a,b){return a.i-b.i;});
+      if(parts.length!==m.n)return;
+      if(storyTrack[sid]&&storyTrack[sid].tid===m.tid)return;
+      try{
+        var bin=atob(parts.map(function(c){return c.d;}).join("")),arr=new Uint8Array(bin.length);
+        for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+        storyTrack[sid]={tid:m.tid,url:URL.createObjectURL(new Blob([arr],{type:m.mime||"audio/mpeg"})),title:m.title||"Story song"};
+        onUrl(storyTrack[sid]);
+      }catch(e){}
+    },{where:["sid","==",sid]});
+  });
+  return function(){tUn();if(chunkUn)chunkUn();};
+}
+function pStoryView(st){
+  var T=themeOf(st.theme),meta=null,picsL=[];
+  var w=h("div",{"class":"roomwrap",style:T.style});
+  var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:st.title})]);
+  String(st.body||"").split("\n").forEach(function(l){if(l.trim())c.appendChild(h("p",{text:l,style:"line-height:1.75"}));});
+  if(isAdmin){
+    c.appendChild(h("button",{text:"✏️ Edit story",onclick:function(){stEdit=st;stNewId=st.id;stTab="new";route();}}));
+    c.appendChild(h("span",{text:"  "}));
+    c.appendChild(h("button",{"class":"del",text:"Delete story",onclick:function(){
+      if(!confirm("Delete this whole story, its pictures and its song?"))return;
+      picsL.forEach(function(p){db.collection("spics").doc(p.id).delete().catch(function(){});});
+      if(meta){for(var k=0;k<meta.n;k++)db.collection("schunks").doc(st.id+"_"+meta.tid+"_"+k).delete().catch(function(){});db.doc("stracks/"+st.id).delete().catch(function(){});}
+      db.collection("stories").doc(st.id).delete().then(function(){stTab="midas";route();});
+    }}));
+  }
+  w.appendChild(c);
+  var pg=h("div",{"class":"grid"}),pc=h("div",{"class":"card"},[h("h3",{"class":"gold",text:"Pictures"}),pg]);
+  w.appendChild(pc);view.appendChild(w);
+  roomFx=T.fx;
+  var tr=storyTrack[st.id];
+  if(tr)roomSong={url:tr.url,title:tr.title};else if(isHttps(st.song))roomSong={url:st.song,title:st.songTitle||st.title};else roomSong={url:"",title:""};
+  if(db){
+    var u1=db.collection("spics").onSnapshot(function(s){picsL=snap(s);storyPics(pg,picsL);pc.style.display=(pg.children.length||isAdmin)?"block":"none";},{where:["sid","==",st.id]});
+    var u2=watchStoryTrack(st.id,function(m){meta=m;},function(t){if(stTab===st.id&&(location.hash||"#home")==="#story")setSong(100,t.url,t.title);});
+    roomUnsub=function(){u1();u2();};
+  }
+}
+function pStoryEditor(){
+  var ed=stEdit,id=stNewId||(stNewId="s"+Date.now()+Math.random().toString(36).slice(2,6));
+  var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:ed?"Edit story":"Add a new story"}),h("p",{"class":"note",text:"Only the admin can add or change stories. Each story gets its own tab with its own colors, pictures and music."})]);
+  var ti=h("input",{placeholder:"Story title (this becomes the tab name)",maxlength:"60"}),bd=h("textarea",{rows:"12",maxlength:"20000",placeholder:"Write the story…"}),msg=h("div",{"class":"note"});
+  if(ed){ti.value=ed.title||"";bd.value=ed.body||"";}
+  c.appendChild(h("label",{text:"Title"}));c.appendChild(ti);c.appendChild(h("label",{text:"Story"}));c.appendChild(bd);c.appendChild(emojiBar(bd));
+  var TE=themeEditor(ed&&ed.theme);c.appendChild(TE.el);
+  var sg=h("input",{placeholder:"https://… link to a song (optional)",maxlength:"300"}),sgt=h("input",{placeholder:"Song title (optional)",maxlength:"60"});
+  sg.value=(ed&&ed.song)||"";sgt.value=(ed&&ed.songTitle)||"";
+  c.appendChild(h("label",{text:"Music for this story"}));c.appendChild(sg);c.appendChild(sgt);
+  var curT=null,tinfo=h("p",{"class":"note",text:"No uploaded song yet."}),mf=h("input",{type:"file",accept:"audio/*"});
+  c.appendChild(tinfo);c.appendChild(mf);
+  c.appendChild(h("button",{text:"Upload song",onclick:async function(){
+    var f=mf.files[0];if(!f){msg.textContent="Choose an audio file first.";return;}
+    if(!/^audio\//.test(f.type)){msg.textContent="That is not an audio file.";return;}
+    if(f.size>3000000){msg.textContent="That song is over 3 MB. Use the link box instead.";return;}
+    try{
+      msg.textContent="Uploading song…";
+      var b64=await new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(String(r.result).split(",")[1]);};r.onerror=rej;r.readAsDataURL(f);});
+      var tid="t"+Date.now().toString(36),n=Math.ceil(b64.length/700000),old=curT;
+      for(var i=0;i<n;i++)await db.collection("schunks").doc(id+"_"+tid+"_"+i).set({sid:id,tid:tid,i:i,n:n,d:b64.slice(i*700000,(i+1)*700000)});
+      await db.doc("stracks/"+id).set({sid:id,title:(sgt.value.trim()||f.name.replace(/\.[^.]+$/,"")).slice(0,60),mime:f.type,n:n,tid:tid,ts:Date.now()});
+      if(old)for(var k=0;k<old.n;k++)db.collection("schunks").doc(id+"_"+old.tid+"_"+k).delete().catch(function(){});
+      mf.value="";msg.textContent="Song uploaded!";
+    }catch(e){msg.textContent="Upload failed: "+((e&&e.message)||"error");}
   }}));
-  if(stEdit){f.appendChild(h("span",{text:"  "}));f.appendChild(h("button",{text:"Cancel",onclick:function(){stEdit=null;route();}}));}
-  view.appendChild(f);
-  state.myStories.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(st){view.appendChild(storyCard(st,true));});
+  c.appendChild(h("span",{text:"  "}));
+  c.appendChild(h("button",{"class":"del",text:"Remove uploaded song",onclick:function(){
+    if(!curT)return;
+    for(var k=0;k<curT.n;k++)db.collection("schunks").doc(id+"_"+curT.tid+"_"+k).delete().catch(function(){});
+    db.doc("stracks/"+id).delete();msg.textContent="Song removed.";
+  }}));
+  c.appendChild(h("p",{"class":"note",text:"Uploads can be up to 3 MB (about 3 minutes of MP3). An uploaded song is used before the link."}));
+  c.appendChild(h("label",{text:"Pictures for this story"}));
+  var fi=h("input",{type:"file",accept:"image/*",multiple:"multiple"}),cap=h("input",{placeholder:"Caption (optional)",maxlength:"100"}),pg=h("div",{"class":"grid",style:"margin-top:14px"});
+  c.appendChild(fi);c.appendChild(cap);
+  c.appendChild(h("button",{text:"Upload pictures",onclick:async function(){
+    if(!assets||!db){msg.textContent="Firebase is not connected yet.";return;}
+    for(var i=0;i<fi.files.length;i++){
+      try{msg.textContent="Uploading "+(i+1)+" of "+fi.files.length+"…";var r=await assets.upload(fi.files[i]);
+        await db.collection("spics").doc("p"+Date.now()+i).set({sid:id,img:r.url,cap:cap.value,ts:Date.now()+i});
+      }catch(e){msg.textContent="Upload failed: "+((e&&e.message)||"error");return;}
+    }
+    fi.value="";cap.value="";msg.textContent="Pictures added.";
+  }}));
+  c.appendChild(pg);
+  c.appendChild(h("hr",{style:"border:0;border-top:1px solid #3a2a0c;margin:18px 0"}));
+  c.appendChild(h("button",{text:ed?"Save changes":"Save story",onclick:function(){
+    var t=ti.value.trim(),b=bd.value.trim();
+    if(!t||!b){msg.textContent="Add a title and the story text.";return;}
+    if(sg.value&&!isHttps(sg.value.trim())){msg.textContent="The song link must start with https://";return;}
+    db.collection("stories").doc(id).set({title:t,body:b,theme:TE.get(),song:sg.value.trim(),songTitle:sgt.value.trim(),ts:ed?ed.ts:Date.now()}).then(function(){stTab=id;stEdit=null;stNewId=null;route();}).catch(function(e){msg.textContent="Could not save: "+((e&&e.message)||"error");});
+  }}));
+  c.appendChild(h("span",{text:"  "}));
+  c.appendChild(h("button",{"class":"del",text:"Cancel",onclick:function(){stTab=ed?id:"midas";stEdit=null;stNewId=null;route();}}));
+  c.appendChild(msg);view.appendChild(c);
+  if(db){
+    var u1=db.collection("spics").onSnapshot(function(s){storyPics(pg,snap(s));},{where:["sid","==",id]});
+    var u2=db.doc("stracks/"+id).onSnapshot(function(s){curT=s.exists?s.data():null;tinfo.textContent=curT?"Current song: "+curT.title:"No uploaded song yet.";});
+    roomUnsub=function(){u1();u2();};
+  }
 }
 function pStory(){
+  var tabs=[["midas","👑 Midas"]];
+  state.stories.slice().sort(function(a,b){return a.ts-b.ts;}).forEach(function(st){tabs.push([st.id,st.title||"Story"]);});
+  if(isAdmin)tabs.push(["new","➕ Add story"]);
+  var cur=null;
+  state.stories.forEach(function(x){if(x.id===stTab)cur=x;});
+  if(stTab==="new"&&!isAdmin)stTab="midas";
+  if(stTab!=="midas"&&stTab!=="new"&&!cur)stTab="midas";
   var bar=h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"});
-  [["midas","👑 Midas"],["members","📚 Member stories"],["mine","➕ My stories"]].forEach(function(t){
-    bar.appendChild(h("button",{"class":"like"+(stTab===t[0]?" on":""),text:t[1],style:"margin:0",onclick:function(){stTab=t[0];stEdit=null;route();}}));
+  tabs.forEach(function(t){
+    bar.appendChild(h("button",{"class":"like"+(stTab===t[0]?" on":""),text:t[1],style:"margin:0",onclick:function(){
+      stTab=t[0];stEdit=null;stNewId=t[0]==="new"?"s"+Date.now()+Math.random().toString(36).slice(2,6):null;route();
+    }}));
   });
   view.appendChild(bar);
-  if(stTab==="members")pMemberStories();else if(stTab==="mine")pMyStories();else pMidasStory();
+  if(stTab==="new")pStoryEditor();else if(cur)pStoryView(cur);else pMidasStory();
 }
 function pMidasStory(){
   var T=[
@@ -689,6 +826,13 @@ function pAdmin(){
     if(dl.value&&!/^https:\/\//i.test(dl.value)){say("The link must start with https://");return;}
     saveSettings({donate:dl.value.trim(),donmsg:dm.value}).then(function(){say("Saved.");}).catch(function(e){say("Could not save: "+(e&&e.message||"error"));});
   }}));
+  c.appendChild(h("label",{text:"18+ age verification link (from your verification provider, must start with https://)"}));
+  var al2=h("input",{placeholder:"https://…"});al2.value=(state.age&&state.age.link)||"";
+  c.appendChild(al2);
+  c.appendChild(h("button",{text:"Save verification link",onclick:function(){
+    if(al2.value&&!/^https:\/\//i.test(al2.value)){say("The link must start with https://");return;}
+    db.doc("private/age").set({link:al2.value.trim()}).then(function(){say("Verification link saved.");}).catch(function(e){say("Could not save: "+((e&&e.message)||"error"));});
+  }}));
   c.appendChild(h("label",{text:"18+ section: add photos"}));
   var nf=h("input",{type:"file",accept:"image/*",multiple:"multiple"}),nc=h("input",{placeholder:"Caption (optional)",maxlength:"100"});
   c.appendChild(nf);c.appendChild(nc);
@@ -729,7 +873,7 @@ function loaded(){
   db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")route();});
   db.collection("likes").onSnapshot(function(s){state.likes=snap(s);if((location.hash||"#home")==="#home")refresh();});
   db.collection("chat").onSnapshot(function(s){state.chat=snap(s);renderChat();},{limit:100});
-  db.collection("stories").onSnapshot(function(s){state.stories=snap(s);if((location.hash||"")==="#story")refresh();},{where:["vis","==","all"]});
+  db.collection("stories").onSnapshot(function(s){state.stories=snap(s);if((location.hash||"")==="#story")refresh();});
 }
 (function(){
   var C=window.SITE||{};
