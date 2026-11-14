@@ -14,6 +14,9 @@ window.SITE = {
   //    The admin password (Dander_Midas) is set in Firebase and is NOT stored in this site.
   adminEmail: "david.d.rodriguez0804@gmail.com",
 
+  // Optional: a relay (TURN) server for the voice room, for networks that block direct connections.
+  // ice: [{urls:"stun:stun.l.google.com:19302"},{urls:"turn:YOUR-SERVER:443",username:"...",credential:"..."}],
+
   // Songs (one per page, they loop). Songs are files, so they are set here.
   settings: {
     song1: "media/song1.mp4", title1: "Midas Touch",

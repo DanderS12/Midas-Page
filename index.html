@@ -57,6 +57,12 @@ audio{width:100%;margin:12px 0}
 .ph button.pinb{left:6px;right:auto;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#1a1204}
 .card,.roomwrap,.storytext{overflow-wrap:anywhere;word-break:break-word;min-width:0}
 .card p,.card h2,.card h3,.storytext p{overflow-wrap:anywhere;word-break:break-word;max-width:100%}
+#vpill{position:fixed;right:10px;bottom:84px;z-index:25;display:none;align-items:center;gap:8px;padding:8px 12px;background:#17110a;border:1px solid var(--gold2);border-radius:999px;box-shadow:0 0 18px rgba(245,197,66,.35);font-family:Cinzel,Georgia,serif;font-size:.8rem;color:var(--gold)}
+#vpill button{padding:5px 12px;font-size:.75rem}
+.vrow{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid #3a2a0c;border-radius:10px;margin:6px 0;text-align:left}
+.vrow .dot{width:12px;height:12px;border-radius:50%;background:#5a4a2a;flex:none}
+.vrow.speak{border-color:var(--gold);box-shadow:0 0 12px rgba(245,197,66,.6)}
+.vrow.speak .dot{background:#6dff8a}
 .storybox{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
 .storypics{flex:0 1 260px;max-width:100%;display:flex;flex-direction:column;gap:12px}
 .storypics .ph img{aspect-ratio:auto;object-fit:contain;max-height:420px;background:#000}
@@ -79,6 +85,8 @@ select{width:100%;padding:10px;background:#0e0a04;color:var(--text);border:1px s
 </div></div>
 
 <div id="lb"><img alt=""></div>
+<div id="vpill"><span id="vpt"></span><button id="vpm" type="button">Mute</button><button id="vpl" type="button" class="del">Leave</button></div>
+<div id="vaudio" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden"></div>
 <div id="bar"><span id="bt"></span><audio id="au" controls loop preload="auto"></audio></div>
 
 <div class="wrap">
@@ -292,6 +300,7 @@ function lp(t,i){return h("div",{style:"text-align:center;font-size:.75rem;color
 function profile(uid){for(var i=0;i<state.users.length;i++)if(state.users[i].id===uid)return state.users[i];return null;}
 function myName(){var p=me&&profile(me.uid);return (p&&p.name)||(me&&me.email?me.email.split("@")[0]:"Guest");}
 function onAuthChange(u){
+  if(voice.on&&(!u||!me||u.uid!==me.uid))vLeave();
   var ae=(window.SITE||{}).adminEmail;
   me=u?{uid:u.uid,email:u.email}:null;
   isAdmin=!!(u&&ae&&u.email&&u.email.toLowerCase()===ae.toLowerCase());
@@ -303,6 +312,7 @@ function onAuthChange(u){
     dmUnsubs.push(db.collection("dms").onSnapshot(function(s){state.dmOut=snap(s);renderDM();},{where:["from","==",me.uid]}));
     dmUnsubs.push(db.doc("private/voice").onSnapshot(function(s){state.voice=(s.exists&&s.data())||{};refresh();}));
     dmUnsubs.push(db.doc("private/age").onSnapshot(function(s){state.age=(s.exists&&s.data())||{};refresh();}));
+    dmUnsubs.push(db.collection("vpeers").onSnapshot(function(s){voice.last=snap(s);vPeers();}));
     dmUnsubs.push(db.doc("adults/"+me.uid).onSnapshot(function(s){state.adult=!!s.exists;watchNsfw();refresh();}));
     if(isAdmin){dmUnsubs.push(db.collection("adults").onSnapshot(function(s){state.adults=snap(s);refresh();}));watchNsfw();}
   }
@@ -542,15 +552,155 @@ function pDM(){
   c.appendChild(dmBox);c.appendChild(dmForm);
   view.appendChild(c);renderDM();
 }
+/* ---------- voice room (WebRTC, members only) ---------- */
+var voice={on:false,stream:null,pcs:{},pcAt:{},q:{},handled:{},uns:[],hb:null,joinTs:0,muted:false,peers:[],last:[],myName:""};
+var vAC=null,vAn={};
+function vIce(){return (window.SITE&&SITE.ice)||[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}];}
+function vIsOfferer(p){return voice.joinTs>p.joinTs||(voice.joinTs===p.joinTs&&me.uid>p.id);}
+function vSend(to,type,data){
+  var id="g"+Date.now()+Math.random().toString(36).slice(2,7);
+  return db.collection("vsig").doc(id).set({from:me.uid,to:to,type:type,data:JSON.stringify(data),ts:Date.now()}).catch(function(){});
+}
+function vWatch(uid,stream){
+  try{
+    if(!vAC)vAC=new (window.AudioContext||window.webkitAudioContext)();
+    if(vAC.state==="suspended")vAC.resume();
+    var src=vAC.createMediaStreamSource(stream),an=vAC.createAnalyser();an.fftSize=256;src.connect(an);
+    vAn[uid]={an:an,buf:new Uint8Array(an.frequencyBinCount)};
+  }catch(e){}
+}
+setInterval(function(){
+  for(var u in vAn){
+    var o=vAn[u];o.an.getByteFrequencyData(o.buf);
+    var sum=0;for(var i=0;i<o.buf.length;i++)sum+=o.buf[i];
+    var el=document.getElementById("vp-"+u);if(el)el.classList.toggle("speak",(sum/o.buf.length)>14);
+  }
+},200);
+function vMakePc(peerUid){
+  var pc=new RTCPeerConnection({iceServers:vIce()});
+  voice.pcs[peerUid]=pc;voice.pcAt[peerUid]=Date.now();voice.q[peerUid]=voice.q[peerUid]||[];
+  voice.stream.getTracks().forEach(function(t){pc.addTrack(t,voice.stream);});
+  pc.onicecandidate=function(e){if(e.candidate)vSend(peerUid,"cand",e.candidate.toJSON());};
+  pc.ontrack=function(e){
+    var a=document.getElementById("va-"+peerUid);
+    if(!a){a=document.createElement("audio");a.id="va-"+peerUid;a.autoplay=true;a.setAttribute("playsinline","");document.getElementById("vaudio").appendChild(a);}
+    a.srcObject=e.streams[0];var pr=a.play();if(pr&&pr.catch)pr.catch(function(){});
+    vWatch(peerUid,e.streams[0]);
+  };
+  pc.onconnectionstatechange=function(){vRefreshUI();};
+  return pc;
+}
+function vFlush(uid){var pc=voice.pcs[uid],q=voice.q[uid]||[];voice.q[uid]=[];if(!pc)return;q.forEach(function(c){pc.addIceCandidate(c).catch(function(){});});}
+async function vCall(peerUid){
+  try{
+    var pc=vMakePc(peerUid),off=await pc.createOffer();
+    await pc.setLocalDescription(off);
+    vSend(peerUid,"offer",{type:off.type,sdp:off.sdp});
+  }catch(e){}
+}
+async function vHandle(g){
+  var d,from=g.from;
+  try{d=JSON.parse(g.data);}catch(e){return;}
+  try{
+    if(g.type==="offer"){
+      if(voice.pcs[from]){try{voice.pcs[from].close();}catch(e){}delete voice.pcs[from];}
+      var pc=vMakePc(from);
+      await pc.setRemoteDescription(d);
+      var ans=await pc.createAnswer();await pc.setLocalDescription(ans);
+      vSend(from,"answer",{type:ans.type,sdp:ans.sdp});
+      vFlush(from);
+    }else if(g.type==="answer"){
+      if(voice.pcs[from]){await voice.pcs[from].setRemoteDescription(d);vFlush(from);}
+    }else if(g.type==="cand"){
+      var p2=voice.pcs[from];
+      if(p2&&p2.remoteDescription)await p2.addIceCandidate(d);else{(voice.q[from]=voice.q[from]||[]).push(d);}
+    }
+  }catch(e){}
+}
+function vPeers(){
+  var now=Date.now();
+  voice.peers=(voice.last||[]).filter(function(p){return me&&p.id!==me.uid&&now-p.ts<45000;});
+  if(voice.on){
+    if(voice.peers.length>5){alert("The voice room is full (6 people max).");vLeave();return;}
+    voice.peers.forEach(function(p){if(!voice.pcs[p.id]&&vIsOfferer(p))vCall(p.id);});
+    Object.keys(voice.pcs).forEach(function(u){
+      if(voice.peers.some(function(p){return p.id===u;})||now-(voice.pcAt[u]||0)<12000)return;
+      try{voice.pcs[u].close();}catch(e){}
+      delete voice.pcs[u];delete vAn[u];var a=document.getElementById("va-"+u);if(a)a.remove();
+    });
+  }
+  vRefreshUI();
+}
+function vRefreshUI(){
+  var on=voice.on,pill=document.getElementById("vpill");
+  if(pill){pill.style.display=on?"flex":"none";document.getElementById("vpt").textContent="🎙️ In voice · "+(voice.peers.length+1);document.getElementById("vpm").textContent=voice.muted?"Unmute":"Mute";}
+  var L=document.getElementById("vlist");
+  if(L){
+    L.innerHTML="";
+    var rows=[];
+    if(on)rows.push({id:me.uid,name:(voice.myName||"You")+" (you)",ok:true});
+    voice.peers.forEach(function(p){var pc=voice.pcs[p.id];rows.push({id:p.id,name:p.name||"Member",ok:!on||!!(pc&&pc.connectionState==="connected")});});
+    rows.forEach(function(r){L.appendChild(h("div",{"class":"vrow",id:"vp-"+r.id},[h("span",{"class":"dot"}),h("span",{text:r.name+(r.ok?"":" (connecting…)")})]));});
+    if(!rows.length)L.appendChild(h("p",{"class":"muted",text:"Nobody is in the voice room right now."}));
+  }
+  var j=document.getElementById("vjoin"),m=document.getElementById("vmute"),l2=document.getElementById("vleave");
+  if(j){j.style.display=on?"none":"inline-block";m.style.display=on?"inline-block":"none";l2.style.display=on?"inline-block":"none";m.textContent=voice.muted?"🔇 Unmute":"🎤 Mute";}
+}
+async function vJoin(){
+  if(voice.on||!db||!me)return;
+  if(typeof RTCPeerConnection==="undefined"||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert("This browser can't do voice chat.");return;}
+  try{voice.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
+  catch(e){alert("Could not use your microphone. Allow microphone access for this site and try again.");return;}
+  voice.on=true;voice.muted=false;voice.joinTs=Date.now();voice.myName=myName().slice(0,40);
+  voice.pcs={};voice.q={};voice.handled={};
+  try{await db.collection("vpeers").doc(me.uid).set({uid:me.uid,name:voice.myName,joinTs:voice.joinTs,ts:Date.now()});}
+  catch(e){alert("Could not join the voice room: "+((e&&e.message)||"error"));vLeave();return;}
+  voice.uns.push(db.collection("vsig").onSnapshot(function(s){
+    snap(s).sort(function(a,b){return a.ts-b.ts;}).forEach(function(g){
+      if(voice.handled[g.id])return;voice.handled[g.id]=1;
+      db.collection("vsig").doc(g.id).delete().catch(function(){});
+      if(g.ts<voice.joinTs-10000)return;
+      vHandle(g);
+    });
+  },{where:["to","==",me.uid]}));
+  voice.hb=setInterval(function(){
+    if(db&&me)db.collection("vpeers").doc(me.uid).set({uid:me.uid,name:voice.myName,joinTs:voice.joinTs,ts:Date.now()}).catch(function(){});
+    vPeers();
+  },15000);
+  vWatch(me.uid,voice.stream);
+  vPeers();
+}
+function vMute(){
+  if(!voice.on||!voice.stream)return;
+  voice.muted=!voice.muted;
+  voice.stream.getAudioTracks().forEach(function(t){t.enabled=!voice.muted;});
+  vRefreshUI();
+}
+function vLeave(){
+  if(!voice.on)return;
+  voice.on=false;
+  clearInterval(voice.hb);
+  voice.uns.forEach(function(f){try{f();}catch(e){}});voice.uns=[];
+  Object.keys(voice.pcs).forEach(function(u){try{voice.pcs[u].close();}catch(e){}});
+  voice.pcs={};voice.q={};voice.handled={};vAn={};
+  if(voice.stream){voice.stream.getTracks().forEach(function(t){t.stop();});voice.stream=null;}
+  var va=document.getElementById("vaudio");if(va)va.innerHTML="";
+  if(db&&me)db.collection("vpeers").doc(me.uid).delete().catch(function(){});
+  vRefreshUI();
+}
+addEventListener("beforeunload",function(){if(voice.on)vLeave();});
+document.getElementById("vpm").onclick=vMute;
+document.getElementById("vpl").onclick=vLeave;
 function pVoice(){
   if(!me){needLogin();return;}
-  var l=state.voice&&state.voice.link;
-  var c=h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"🎙️ Voice Room"})]);
-  if(isHttps(l)){
-    c.appendChild(h("p",{text:"The voice room is for members. Tap the button, then allow your microphone when your browser asks."}));
-    c.appendChild(h("a",{"class":"btn",href:l,target:"_blank",rel:"noopener noreferrer",text:"🎙️ Join the voice room"}));
-  }else c.appendChild(h("p",{"class":"muted",text:"The voice room link has not been set up yet."}));
-  view.appendChild(c);
+  var c=h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"🎙️ Voice Room"}),
+    h("p",{text:"Members only. Press Join and talk. Everyone in the room can hear you. Headphones help avoid echo."}),
+    h("div",{id:"vlist",style:"max-width:420px;margin:12px auto"}),
+    h("button",{id:"vjoin",text:"🎙️ Join voice",onclick:vJoin}),
+    h("button",{id:"vmute",text:"🎤 Mute",style:"display:none",onclick:vMute}),h("span",{text:"  "}),
+    h("button",{id:"vleave","class":"del",text:"Leave",style:"display:none",onclick:vLeave}),
+    h("p",{"class":"note",text:"Up to 6 people. You stay in the call when you switch tabs. If you can't hear someone, leave and join again."})]);
+  view.appendChild(c);vRefreshUI();
 }
 
 /* ---------- likes ---------- */
@@ -868,13 +1018,6 @@ function pAdmin(){
     }})])]));
   });
   if(!state.users.length)c.appendChild(h("p",{"class":"note",text:"No members yet."}));
-  c.appendChild(h("label",{text:"Voice room link (Discord, Google Meet, Jitsi… must start with https://)"}));
-  var vl=h("input",{placeholder:"https://…"});vl.value=(state.voice&&state.voice.link)||"";
-  c.appendChild(vl);
-  c.appendChild(h("button",{text:"Save voice link",onclick:function(){
-    if(vl.value&&!/^https:\/\//i.test(vl.value)){say("The link must start with https://");return;}
-    db.doc("private/voice").set({link:vl.value.trim()}).then(function(){say("Voice link saved.");}).catch(function(e){say("Could not save: "+((e&&e.message)||"error"));});
-  }}));
   c.appendChild(h("p",{"class":"note",text:"Delete buttons show on the Gallery, Comic and comment areas while you are logged in. Songs are set in config.js."}));
   c.appendChild(msg);view.appendChild(c);
 }
