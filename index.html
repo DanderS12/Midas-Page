@@ -48,6 +48,13 @@ audio{width:100%;margin:12px 0}
 #bar span{font-family:Cinzel,Georgia,serif;color:var(--gold);font-size:.85rem}
 #bar audio{flex:1 1 220px;max-width:420px;margin:0}
 .like{background:none;border:1px solid var(--gold2);color:var(--gold);padding:4px 14px;margin:2px 10px 10px;border-radius:999px;font-size:.9rem}
+.eb{display:flex;flex-wrap:wrap;gap:3px;margin:-4px 0 10px}
+.eb button{background:none;border:1px solid #3a2a0c;border-radius:8px;font-size:1.15rem;padding:2px 7px;cursor:pointer;color:inherit}
+.roomwrap{border-radius:16px;padding:16px;border:1px solid var(--gold2);margin-bottom:18px}
+.roomwrap .card{background:var(--panel)}
+.pin{position:absolute;top:6px;left:8px;font-size:1.4rem;filter:drop-shadow(0 0 4px #000)}
+.ph button.pinb{left:6px;right:auto;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#1a1204}
+select{width:100%;padding:10px;background:#0e0a04;color:var(--text);border:1px solid var(--gold2);border-radius:8px;margin-bottom:10px;font:inherit}
 .like.on{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#1a1204}
 @media (prefers-reduced-motion:reduce){.gold,.disc.spin{animation:none}}
 </style>
@@ -68,9 +75,9 @@ audio{width:100%;margin:12px 0}
 <div id="bar"><span id="bt"></span><audio id="au" controls loop preload="auto"></audio></div>
 
 <div class="wrap">
-  <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1 class="gold">The Midas Room</h1><p class="sub">A private gallery of golden moments</p></header>
+  <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1><span>👑</span> <span class="gold">The Midas Room</span> <span>👑</span></h1><p class="sub">A private gallery of golden moments</p></header>
   <nav id="nav">
-    <a href="#home">Gallery</a><a href="#comic">Comic</a><a href="#story">Story</a><a href="#chat">Live Chat</a><a href="#give">Donate</a><a href="#admin">Admin</a>
+    <a href="#home">✨ Gallery</a><a href="#comic">📜 Comic</a><a href="#story">👑 Story</a><a href="#chat">💬 Live Chat</a><a href="#rooms">🏆 Rooms</a><a href="#dm">💌 Messages</a><a href="#voice">🎙️ Voice</a><a href="#give">🪙 Donate</a><a href="#admin">🔑 Admin</a>
   </nav>
   <main id="view"></main>
 </div>
@@ -78,8 +85,8 @@ audio{width:100%;margin:12px 0}
 <script src="config.js"></script>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,query,orderBy,limit} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,query,orderBy,limit,where,updateDoc} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 const C=window.SITE||{};
 function shrink(file){
   return new Promise(function(res,rej){
@@ -102,6 +109,7 @@ if(C.firebase&&C.firebase.apiKey){
   const app=initializeApp(C.firebase),fs=getFirestore(app),au=getAuth(app);
   const wd=function(ref){return {
     set:function(d){return setDoc(ref,d);},
+    update:function(d){return updateDoc(ref,d);},
     delete:function(){return deleteDoc(ref);},
     onSnapshot:function(cb){return onSnapshot(ref,function(s){cb({exists:s.exists(),data:function(){return s.data();}});});}
   };};
@@ -109,12 +117,14 @@ if(C.firebase&&C.firebase.apiKey){
     db:{
       collection:function(n){return {
         doc:function(id){return wd(doc(fs,n,id));},
-        onSnapshot:function(cb,o){var q=(o&&o.limit)?query(collection(fs,n),orderBy("ts","desc"),limit(o.limit)):collection(fs,n);return onSnapshot(q,function(s){cb({docs:s.docs.map(function(d){return {id:d.id,data:function(){return d.data();}};})});});}
+        onSnapshot:function(cb,o){var q=collection(fs,n);if(o&&o.limit)q=query(q,orderBy("ts","desc"),limit(o.limit));if(o&&o.where)q=query(q,where(o.where[0],o.where[1],o.where[2]));return onSnapshot(q,function(s){cb({docs:s.docs.map(function(d){return {id:d.id,data:function(){return d.data();}};})});});}
       };},
       doc:function(p){return wd(doc(fs,...p.split("/")));}
     },
     assets:{upload:function(f){return shrink(f).then(function(u){return {url:u,id:""};});},delete:function(){return Promise.resolve();}},
     login:function(pw){return signInWithEmailAndPassword(au,C.adminEmail,pw);},
+    signin:function(e,pw){return signInWithEmailAndPassword(au,e,pw);},
+    signup:function(e,pw){return createUserWithEmailAndPassword(au,e,pw);},
     logout:function(){return signOut(au);},
     onAuth:function(cb){return onAuthStateChanged(au,cb);}
   };
@@ -124,9 +134,9 @@ if(C.firebase&&C.firebase.apiKey){
 <script>
 (function(){
 var PW="gold",APW="Dander_Midas";
-var state={photos:[],comments:[],comics:[],likes:[],chat:[],settings:{}};
+var state={photos:[],comments:[],comics:[],likes:[],chat:[],users:[],dmIn:[],dmOut:[],voice:{},settings:{}};
 var db=null,assets=null,view=document.getElementById("view");
-var isAdmin=false;
+var isAdmin=false,me=null;
 
 function h(tag,attrs,kids){var e=document.createElement(tag);for(var k in (attrs||{})){if(k==="text")e.textContent=attrs[k];else if(k.slice(0,2)==="on")e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(c);});return e;}
 function store(k,v){try{if(v===undefined)return sessionStorage.getItem(k);sessionStorage.setItem(k,v);}catch(e){return null;}}
@@ -150,12 +160,15 @@ function zoom(u){lb.querySelector("img").src=u;lb.style.display="flex";}
 
 /* ---------- routing ---------- */
 function route(){
-  var r=(location.hash||"#home").slice(1);
-  if(["home","comic","story","chat","give","admin"].indexOf(r)<0)r="home";
-  document.querySelectorAll("#nav a").forEach(function(a){a.classList.toggle("on",a.getAttribute("href")==="#"+r);});
+  var r=(location.hash||"#home").slice(1),rid=null;
+  if(r.indexOf("room-")===0){rid=r.slice(5);r="room";}
+  if(["home","comic","story","chat","rooms","myroom","room","dm","voice","give","admin"].indexOf(r)<0)r="home";
+  if(roomUnsub){try{roomUnsub();}catch(e){}roomUnsub=null;}
+  roomSong=null;
+  document.querySelectorAll("#nav a").forEach(function(a){a.classList.toggle("on",a.getAttribute("href")==="#"+((r==="myroom"||r==="room")?"rooms":r));});
   view.innerHTML="";
-  ({home:pHome,comic:pComic,story:pStory,chat:pChat,give:pGive,admin:pAdmin})[r]();
-  setSong({home:1,comic:2,story:3,give:4,admin:5}[r]||0);
+  ({home:pHome,comic:pComic,story:pStory,chat:pChat,rooms:pRooms,myroom:pMyRoom,room:function(){pRoom(rid);},dm:pDM,voice:pVoice,give:pGive,admin:pAdmin})[r]();
+  if(roomSong)setSong(100,roomSong.url,roomSong.title);else setSong({home:1,comic:2,story:3,give:4,admin:5}[r]||0);
   var cr=document.getElementById("cr");
   var pics={give:["media/corner2.jpg","50% 12%"],story:["media/corner3.jpg","22% 18%"],comic:["media/corner4.jpg","30% 12%"]};
   var pk=pics[r]||["media/corner1.jpg","top"];
@@ -168,12 +181,14 @@ window.addEventListener("hashchange",route);
 function pHome(){
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"The Gallery"})]);
   var g=h("div",{"class":"grid"});
-  var ps=state.photos.slice().sort(function(a,b){return b.ts-a.ts;});
+  var ps=state.photos.slice().sort(function(a,b){return (b.pinned?1:0)-(a.pinned?1:0)||b.ts-a.ts;});
   if(!ps.length)c.appendChild(h("p",{"class":"muted",text:"No photos yet. The owner can add some from the Admin page."}));
   ps.forEach(function(p){
     var d=h("div",{"class":"ph"},[h("img",{src:p.url,alt:p.cap||"Photo",onclick:function(){zoom(p.url);}})]);
     if(p.cap)d.appendChild(h("p",{text:p.cap}));
     d.appendChild(likeBtn(p));
+    if(p.pinned&&!isAdmin)d.appendChild(h("span",{"class":"pin",text:"📌"}));
+    if(isAdmin)d.appendChild(h("button",{"class":"del pinb",text:p.pinned?"Unpin":"📌 Pin",onclick:function(){db.collection("photos").doc(p.id).update({pinned:!p.pinned});}}));
     if(isAdmin)d.appendChild(h("button",{"class":"del",text:"Delete",onclick:function(){delPhoto(p);}}));
     g.appendChild(d);
   });
@@ -183,7 +198,7 @@ function pHome(){
   var nm=h("input",{placeholder:"Your name",maxlength:"40"});nm.value=lstore("midas-name")||"";
   var tx=h("textarea",{placeholder:"Leave a golden word…",rows:"3",maxlength:"500"});
   var er=h("div",{"class":"err"});
-  cc.appendChild(nm);cc.appendChild(tx);cc.appendChild(er);
+  cc.appendChild(nm);cc.appendChild(tx);cc.appendChild(emojiBar(tx));cc.appendChild(er);
   cc.appendChild(h("button",{text:"Post comment",onclick:function(){
     var t=tx.value.trim();if(!t)return;
     if(!db){er.textContent="Comments are not connected yet.";return;}
@@ -216,12 +231,12 @@ function unlock(){
   else unlocked=true;
 }
 ["pointerdown","pointerup","click","touchend","keydown"].forEach(function(e){addEventListener(e,unlock,{passive:true});});
-function setSong(n){
+function setSong(n,ou,ot){
   var nav=n!==lastN;lastN=n;
-  var url=n?state.settings["song"+n]:"";
+  var url=ou||(n?state.settings["song"+n]:"");
   if(!url){au.pause();bar.style.display="none";return;}
   bar.style.display="flex";
-  bt.textContent="♪ "+(state.settings["title"+n]||(n===1?"Gallery song":"Comic song"))+" (on loop)";
+  bt.textContent="♪ "+(ot||state.settings["title"+n]||(n===1?"Gallery song":"Comic song"))+" (on loop)";
   var changed=au.getAttribute("data-u")!==url;
   if(changed){au.src=url;au.setAttribute("data-u",url);}
   if(unlocked&&(changed||nav)){au.play().catch(function(){});}
@@ -242,6 +257,165 @@ function pComic(){
     }}));
     c.appendChild(d);
   });
+  view.appendChild(c);
+}
+
+/* ---------- accounts, rooms, messages, voice ---------- */
+var roomUnsub=null,roomSong=null,dmUnsubs=[],dmWith="",dmBox=null;
+var EMO=["👑","✨","🌟","💛","🪙","🏆","🥇","⭐","💫","🍯","🔱","🐾"];
+function emojiBar(inp){var d=h("div",{"class":"eb"});EMO.forEach(function(e){d.appendChild(h("button",{type:"button",text:e,onclick:function(){inp.value+=e;inp.focus();}}));});return d;}
+function isHex(c){return /^#[0-9a-fA-F]{6}$/.test(c||"");}
+function isHttps(u){return /^https:\/\//i.test(u||"");}
+function mix(hex,t,f){var n=parseInt(hex.slice(1),16),r=n>>16,g=(n>>8)&255,b=n&255,tr=t>>16,tg=(t>>8)&255,tb=t&255;function m(a,c){return Math.round(a+(c-a)*f);}return "#"+((1<<24)+(m(r,tr)<<16)+(m(g,tg)<<8)+m(b,tb)).toString(16).slice(1);}
+function profile(uid){for(var i=0;i<state.users.length;i++)if(state.users[i].id===uid)return state.users[i];return null;}
+function myName(){var p=me&&profile(me.uid);return (p&&p.name)||(me&&me.email?me.email.split("@")[0]:"Guest");}
+function onAuthChange(u){
+  var ae=(window.SITE||{}).adminEmail;
+  me=u?{uid:u.uid,email:u.email}:null;
+  isAdmin=!!(u&&ae&&u.email&&u.email.toLowerCase()===ae.toLowerCase());
+  dmUnsubs.forEach(function(f){try{f();}catch(e){}});dmUnsubs=[];
+  state.users=[];state.dmIn=[];state.dmOut=[];state.voice={};
+  if(me&&db){
+    dmUnsubs.push(db.collection("users").onSnapshot(function(s){state.users=snap(s);refresh();}));
+    dmUnsubs.push(db.collection("dms").onSnapshot(function(s){state.dmIn=snap(s);renderDM();},{where:["to","==",me.uid]}));
+    dmUnsubs.push(db.collection("dms").onSnapshot(function(s){state.dmOut=snap(s);renderDM();},{where:["from","==",me.uid]}));
+    dmUnsubs.push(db.doc("private/voice").onSnapshot(function(s){state.voice=(s.exists&&s.data())||{};refresh();}));
+  }
+  route();
+}
+function authCard(){
+  var em=h("input",{type:"email",placeholder:"Email"}),pw=h("input",{type:"password",placeholder:"Password (6+ characters)"}),nm=h("input",{placeholder:"Room name (for new accounts)",maxlength:"40"}),er=h("div",{"class":"err"});
+  function fail(e){var c=(e&&e.code)||"";er.textContent=c==="auth/email-already-in-use"?"That email already has an account. Try Log in.":c==="auth/weak-password"?"The password needs at least 6 characters.":c==="auth/invalid-email"?"That email does not look right.":(c==="auth/invalid-credential"||c==="auth/wrong-password"||c==="auth/user-not-found")?"Wrong email or password.":"Something went wrong: "+((e&&e.message)||"error");}
+  return h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"Your Own Golden Room"}),
+    h("p",{"class":"muted",text:"Log in or create an account to get your own room, send private messages and join the voice room."}),
+    em,pw,nm,er,
+    h("button",{text:"Log in",onclick:function(){if(!window.FB){er.textContent="Accounts are not connected yet.";return;}er.textContent="";FB.signin(em.value.trim(),pw.value).catch(fail);}}),
+    h("span",{text:"  "}),
+    h("button",{text:"Create account",onclick:function(){
+      if(!window.FB){er.textContent="Accounts are not connected yet.";return;}
+      er.textContent="";
+      FB.signup(em.value.trim(),pw.value).then(function(cr){var u=cr.user;return db.collection("users").doc(u.uid).set({uid:u.uid,name:(nm.value.trim()||"Golden Guest").slice(0,40),story:"",accent:"#f5c542",bg:"#0b0805",panel:"#17110a",text:"#f3e6c4",song:"",songTitle:"",ts:Date.now()});}).catch(fail);
+    }})]);
+}
+function photoGrid(el,docs,mine){
+  el.innerHTML="";
+  docs.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(p){
+    if(!p.img||p.img.indexOf("data:image/jpeg;base64,")!==0)return;
+    var d=h("div",{"class":"ph"},[h("img",{src:p.img,alt:p.cap||"Photo",onclick:function(){zoom(p.img);}})]);
+    if(p.cap)d.appendChild(h("p",{text:p.cap}));
+    if(mine||isAdmin)d.appendChild(h("button",{"class":"del",text:"Delete",onclick:function(){if(confirm("Delete this photo?"))db.collection("uphotos").doc(p.id).delete();}}));
+    el.appendChild(d);
+  });
+  if(!el.children.length)el.appendChild(h("p",{"class":"muted",text:"No photos yet."}));
+}
+function pRooms(){
+  if(!me){view.appendChild(authCard());return;}
+  var p=profile(me.uid);
+  var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Rooms"}),
+    h("p",{text:"Welcome"+(p?", "+p.name:"")+"! Every member has their own room with their own story, photos, song and colors. Your room never changes the main site."}),
+    h("a",{"class":"btn",href:"#myroom",text:"Edit my room"}),h("span",{text:"  "}),
+    h("button",{text:"Log out",onclick:function(){FB.logout();}})]);
+  view.appendChild(c);
+  var g=h("div",{"class":"grid"});
+  state.users.slice().sort(function(a,b){return (a.name||"").localeCompare(b.name||"");}).forEach(function(u){
+    g.appendChild(h("div",{"class":"card center"},[h("h3",{"class":"gold",text:u.name||"Member"}),h("a",{"class":"btn",href:"#room-"+u.id,text:"Visit room"})]));
+  });
+  if(!state.users.length)g.appendChild(h("p",{"class":"muted",text:"No rooms yet."}));
+  view.appendChild(g);
+}
+function pMyRoom(){
+  if(!me){view.appendChild(authCard());return;}
+  var p=profile(me.uid)||{name:"",story:"",accent:"#f5c542",bg:"#0b0805",panel:"#17110a",text:"#f3e6c4",song:"",songTitle:""};
+  var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"My Room"}),h("a",{"class":"btn",href:"#room-"+me.uid,text:"View my room"})]);
+  var nm=h("input",{maxlength:"40",placeholder:"Room name"});nm.value=p.name||"";
+  var st=h("textarea",{rows:"8",maxlength:"4000",placeholder:"Write your own story here…"});st.value=p.story||"";
+  function col(v){var i=h("input",{type:"color"});i.value=isHex(v)?v:"#000000";i.style.cssText="width:70px;height:40px;padding:2px";return i;}
+  var ca=col(p.accent),cb=col(p.bg),cp=col(p.panel),ct=col(p.text);
+  var sg=h("input",{placeholder:"https://… direct link to a song (optional)",maxlength:"300"});sg.value=p.song||"";
+  var sgt=h("input",{placeholder:"Song title (optional)",maxlength:"60"});sgt.value=p.songTitle||"";
+  var msg=h("div",{"class":"note"});
+  c.appendChild(h("label",{text:"Room name"}));c.appendChild(nm);
+  c.appendChild(h("label",{text:"My story"}));c.appendChild(st);
+  c.appendChild(h("label",{text:"Theme colors: accent, background, panels, text"}));
+  c.appendChild(h("div",{style:"display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px"},[ca,cb,cp,ct]));
+  c.appendChild(h("label",{text:"My song (plays on loop in my room)"}));c.appendChild(sg);c.appendChild(sgt);
+  c.appendChild(h("p",{"class":"note",text:"Songs can't be uploaded here. Paste a direct https link to an audio file."}));
+  c.appendChild(h("button",{text:"Save my room",onclick:function(){
+    if(sg.value&&!isHttps(sg.value.trim())){msg.textContent="The song link must start with https://";return;}
+    db.collection("users").doc(me.uid).set({uid:me.uid,name:nm.value.trim().slice(0,40)||"Golden Guest",story:st.value,accent:ca.value,bg:cb.value,panel:cp.value,text:ct.value,song:sg.value.trim(),songTitle:sgt.value.trim(),ts:p.ts||Date.now()}).then(function(){msg.textContent="Saved!";}).catch(function(e){msg.textContent="Could not save: "+((e&&e.message)||"error");});
+  }}));
+  c.appendChild(h("label",{text:"My photos"}));
+  var fi=h("input",{type:"file",accept:"image/*",multiple:"multiple"}),cap=h("input",{placeholder:"Caption (optional)",maxlength:"100"}),pg=h("div",{"class":"grid",style:"margin-top:14px"});
+  c.appendChild(fi);c.appendChild(cap);
+  c.appendChild(h("button",{text:"Upload photos",onclick:async function(){
+    if(!assets||!db){msg.textContent="Accounts are not connected yet.";return;}
+    for(var i=0;i<fi.files.length;i++){
+      try{msg.textContent="Uploading "+(i+1)+" of "+fi.files.length+"…";
+        var r=await assets.upload(fi.files[i]);
+        await db.collection("uphotos").doc("u"+Date.now()+i).set({owner:me.uid,img:r.url,cap:cap.value,ts:Date.now()+i});
+      }catch(e){msg.textContent="Upload failed: "+((e&&e.message)||"error");return;}
+    }
+    fi.value="";cap.value="";msg.textContent="Photos added!";
+  }}));
+  c.appendChild(msg);c.appendChild(pg);view.appendChild(c);
+  if(db)roomUnsub=db.collection("uphotos").onSnapshot(function(s){photoGrid(pg,snap(s),true);},{where:["owner","==",me.uid]});
+}
+function pRoom(uid){
+  if(!me){view.appendChild(authCard());return;}
+  var p=profile(uid);
+  if(!p){view.appendChild(h("div",{"class":"card center"},[h("p",{"class":"muted",text:"Looking for this room…"}),h("a",{"class":"btn",href:"#rooms",text:"Back to rooms"})]));return;}
+  var ac=isHex(p.accent)?p.accent:"#f5c542",bg=isHex(p.bg)?p.bg:"#0b0805",pn=isHex(p.panel)?p.panel:"#17110a",tx=isHex(p.text)?p.text:"#f3e6c4";
+  var w=h("div",{"class":"roomwrap",style:"--gold:"+ac+";--gold2:"+mix(ac,0,.3)+";--gold3:"+mix(ac,0xffffff,.6)+";--bg:"+bg+";--panel:"+pn+";--text:"+tx+";background:"+bg+";color:"+tx});
+  var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:p.name||"Member"})]);
+  String(p.story||"").split("\n").forEach(function(l){if(l.trim())c.appendChild(h("p",{text:l,style:"line-height:1.7"}));});
+  if(!p.story)c.appendChild(h("p",{"class":"muted",text:"This room has no story yet."}));
+  if(uid!==me.uid)c.appendChild(h("button",{text:"💌 Send a message",onclick:function(){dmWith=uid;location.hash="dm";}}));
+  w.appendChild(c);
+  var pc=h("div",{"class":"card"},[h("h3",{"class":"gold",text:"Photos"})]),pg=h("div",{"class":"grid"});
+  pc.appendChild(pg);w.appendChild(pc);view.appendChild(h("p",{},[h("a",{href:"#rooms",style:"color:var(--gold)",text:"← All rooms"})]));view.appendChild(w);
+  if(isHttps(p.song))roomSong={url:p.song,title:p.songTitle||"Room song"};
+  if(db)roomUnsub=db.collection("uphotos").onSnapshot(function(s){photoGrid(pg,snap(s),uid===me.uid);},{where:["owner","==",uid]});
+}
+function renderDM(){
+  if(!dmBox||!document.body.contains(dmBox))return;
+  dmBox.innerHTML="";
+  if(!dmWith){dmBox.appendChild(h("p",{"class":"muted",text:"Pick someone to message."}));return;}
+  var all=state.dmIn.filter(function(m){return m.from===dmWith;}).concat(state.dmOut.filter(function(m){return m.to===dmWith;})).sort(function(a,b){return a.ts-b.ts;});
+  all.forEach(function(m){
+    var mine=m.from===me.uid;
+    dmBox.appendChild(h("div",{"class":"cm"},[h("b",{text:mine?"You":(m.fromName||"Them")}),h("small",{text:new Date(m.ts).toLocaleString()}),h("p",{text:m.text})]));
+  });
+  if(!all.length)dmBox.appendChild(h("p",{"class":"muted",text:"No messages yet. Say hello!"}));
+  dmBox.scrollTop=dmBox.scrollHeight;
+}
+function pDM(){
+  if(!me){view.appendChild(authCard());return;}
+  var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Private Messages"}),h("p",{"class":"note",text:"Only you and the person you write to can read these."})]);
+  var sel=h("select");
+  sel.appendChild(h("option",{value:"",text:"Choose someone…"}));
+  state.users.forEach(function(u){if(u.id!==me.uid)sel.appendChild(h("option",{value:u.id,text:u.name||"Member"}));});
+  sel.value=dmWith;if(sel.value!==dmWith){dmWith="";sel.value="";}
+  sel.onchange=function(){dmWith=sel.value;renderDM();};
+  dmBox=h("div",{style:"height:45vh;overflow-y:auto;border:1px solid #3a2a0c;border-radius:10px;padding:4px 12px;margin-bottom:10px;background:#0e0a04"});
+  var tx=h("input",{placeholder:"Type a private message…",maxlength:"500"}),er=h("div",{"class":"err"});
+  function send(){
+    var t=tx.value.trim();if(!t)return;
+    if(!dmWith){er.textContent="Choose someone first.";return;}
+    var id="d"+Date.now()+Math.random().toString(36).slice(2,6);
+    db.collection("dms").doc(id).set({from:me.uid,to:dmWith,fromName:myName().slice(0,40),text:t,ts:Date.now()}).then(function(){tx.value="";er.textContent="";}).catch(function(e){er.textContent="Could not send: "+((e&&e.message)||"error");});
+  }
+  tx.addEventListener("keydown",function(e){if(e.key==="Enter")send();});
+  c.appendChild(sel);c.appendChild(dmBox);c.appendChild(tx);c.appendChild(emojiBar(tx));c.appendChild(er);c.appendChild(h("button",{text:"Send",onclick:send}));
+  view.appendChild(c);renderDM();
+}
+function pVoice(){
+  if(!me){view.appendChild(authCard());return;}
+  var l=state.voice&&state.voice.link;
+  var c=h("div",{"class":"card center"},[h("h2",{"class":"gold",text:"🎙️ Voice Room"})]);
+  if(isHttps(l)){
+    c.appendChild(h("p",{text:"The voice room is for members. Tap the button, then allow your microphone when your browser asks."}));
+    c.appendChild(h("a",{"class":"btn",href:l,target:"_blank",rel:"noopener noreferrer",text:"🎙️ Join the voice room"}));
+  }else c.appendChild(h("p",{"class":"muted",text:"The voice room link has not been set up yet."}));
   view.appendChild(c);
 }
 
@@ -289,7 +463,7 @@ function pChat(){
     db.collection("chat").doc(id).set({name:nm.value.trim()||"Guest",text:t,ts:Date.now()}).then(function(){tx.value="";er.textContent="";}).catch(function(e){er.textContent="Could not send: "+(e&&e.message||"error");});
   }
   tx.addEventListener("keydown",function(e){if(e.key==="Enter")send();});
-  c.appendChild(chatBox);c.appendChild(nm);c.appendChild(tx);c.appendChild(er);
+  c.appendChild(chatBox);c.appendChild(nm);c.appendChild(tx);c.appendChild(emojiBar(tx));c.appendChild(er);
   c.appendChild(h("button",{text:"Send",onclick:send}));
   view.appendChild(c);
   renderChat();
@@ -376,6 +550,13 @@ function pAdmin(){
     if(dl.value&&!/^https:\/\//i.test(dl.value)){say("The link must start with https://");return;}
     saveSettings({donate:dl.value.trim(),donmsg:dm.value}).then(function(){say("Saved.");}).catch(function(e){say("Could not save: "+(e&&e.message||"error"));});
   }}));
+  c.appendChild(h("label",{text:"Voice room link (Discord, Google Meet, Jitsi… must start with https://)"}));
+  var vl=h("input",{placeholder:"https://…"});vl.value=(state.voice&&state.voice.link)||"";
+  c.appendChild(vl);
+  c.appendChild(h("button",{text:"Save voice link",onclick:function(){
+    if(vl.value&&!/^https:\/\//i.test(vl.value)){say("The link must start with https://");return;}
+    db.doc("private/voice").set({link:vl.value.trim()}).then(function(){say("Voice link saved.");}).catch(function(e){say("Could not save: "+((e&&e.message)||"error"));});
+  }}));
   c.appendChild(h("p",{"class":"note",text:"Delete buttons show on the Gallery, Comic and comment areas while you are logged in. Songs are set in config.js."}));
   c.appendChild(msg);view.appendChild(c);
 }
@@ -393,7 +574,7 @@ function loaded(){
 (function(){
   var C=window.SITE||{};
   state.settings=Object.assign({},C.settings||{});
-  function start(){db=FB.db;assets=FB.assets;loaded();FB.onAuth(function(u){isAdmin=!!u;route();});}
+  function start(){db=FB.db;assets=FB.assets;loaded();FB.onAuth(onAuthChange);}
   if(window.FB)start();else addEventListener("fb-ready",start);
 })();
 
@@ -403,6 +584,9 @@ function size(){W=cv.width=innerWidth;H=cv.height=innerHeight;}
 size();addEventListener("resize",size);
 var still=matchMedia("(prefers-reduced-motion:reduce)").matches;
 for(var i=0;i<90;i++)dots.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*2+.6,vy:Math.random()*.5+.15,vx:(Math.random()-.5)*.3,ph:Math.random()*6.28,sp:Math.random()*.05+.02});
+var paws=[];for(var j=0;j<16;j++)paws.push({x:Math.random()*W,y:Math.random()*H,s:Math.random()*8+8,vy:Math.random()*.45+.2,vx:(Math.random()-.5)*.25,r:Math.random()*6.28,vr:(Math.random()-.5)*.012,a:Math.random()*.35+.35});
+function ell(x,y,rx,ry){cx.beginPath();cx.ellipse(x,y,rx,ry,0,0,6.2832);cx.fill();}
+function paw(p){cx.save();cx.translate(p.x,p.y);cx.rotate(p.r);cx.globalAlpha=p.a;cx.fillStyle="#e8b230";cx.shadowColor="#f5c542";cx.shadowBlur=10;var z=p.s;ell(0,z*.4,z*.55,z*.45);ell(-z*.62,-z*.1,z*.2,z*.28);ell(-z*.24,-z*.52,z*.2,z*.28);ell(z*.24,-z*.52,z*.2,z*.28);ell(z*.62,-z*.1,z*.2,z*.28);cx.restore();}
 function tick(){
   cx.clearRect(0,0,W,H);
   dots.forEach(function(d){
@@ -414,6 +598,7 @@ function tick(){
     cx.beginPath();
     cx.moveTo(d.x,d.y-d.r*2.2);cx.lineTo(d.x+d.r,d.y);cx.lineTo(d.x,d.y+d.r*2.2);cx.lineTo(d.x-d.r,d.y);cx.closePath();cx.fill();
   });
+  paws.forEach(function(p){if(!still){p.y+=p.vy;p.x+=p.vx;p.r+=p.vr;}if(p.y>H+30){p.y=-30;p.x=Math.random()*W;}paw(p);});
   requestAnimationFrame(tick);
 }
 tick();

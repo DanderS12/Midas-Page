@@ -1,25 +1,43 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Anyone can read everything and leave a comment (with limits)
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'david.d.rodriguez0804@gmail.com';
+    }
+    function okUser(d) {
+      return d.keys().hasOnly(['uid','name','story','accent','bg','panel','text','song','songTitle','ts'])
+        && d.uid == request.auth.uid
+        && d.name is string && d.name.size() <= 40
+        && d.story is string && d.story.size() <= 4000
+        && d.accent.matches('^#[0-9a-fA-F]{6}$') && d.bg.matches('^#[0-9a-fA-F]{6}$')
+        && d.panel.matches('^#[0-9a-fA-F]{6}$') && d.text.matches('^#[0-9a-fA-F]{6}$')
+        && d.song is string && d.song.size() <= 300
+        && d.songTitle is string && d.songTitle.size() <= 60;
+    }
+
+    // Main site content: everyone reads, only the admin changes
+    match /{col}/{id} {
+      allow read: if col in ['photos','comics','settings'];
+      allow write: if col in ['photos','comics','settings'] && isAdmin();
+    }
+
     match /comments/{id} {
       allow read: if true;
       allow create: if request.resource.data.keys().hasOnly(['name','text','ts'])
         && request.resource.data.name is string && request.resource.data.name.size() <= 40
         && request.resource.data.text is string && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 500;
-      allow delete: if request.auth != null && request.auth.token.email == 'david.d.rodriguez0804@gmail.com';
+      allow delete: if isAdmin();
     }
-    // Live chat: anyone can send a message (with limits); only the admin can delete
     match /chat/{id} {
       allow read: if true;
       allow create: if request.resource.data.keys().hasOnly(['name','text','ts'])
         && request.resource.data.name is string && request.resource.data.name.size() <= 40
         && request.resource.data.text is string && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 300;
-      allow delete: if request.auth != null && request.auth.token.email == 'david.d.rodriguez0804@gmail.com';
+      allow delete: if isAdmin();
     }
-    // Likes: one per visitor per photo
     match /likes/{id} {
       allow read: if true;
       allow create: if request.resource.data.keys().hasOnly(['pid','vid','ts'])
@@ -27,10 +45,42 @@ service cloud.firestore {
         && id == request.resource.data.pid + '_' + request.resource.data.vid;
       allow delete: if true;
     }
-    // Photos, comic pages and settings: only the admin can change them
-    match /{col}/{id} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email == 'david.d.rodriguez0804@gmail.com';
+
+    // Member rooms (signed-in members only)
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == uid && okUser(request.resource.data);
+      allow delete: if request.auth != null && (request.auth.uid == uid || isAdmin());
+    }
+    match /uphotos/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['owner','img','cap','ts'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.cap is string && request.resource.data.cap.size() <= 100
+        && request.resource.data.img is string && request.resource.data.img.size() < 900000
+        && request.resource.data.img.matches('data:image/jpeg;base64,.*');
+      allow delete: if request.auth != null && (resource.data.owner == request.auth.uid || isAdmin());
+    }
+
+    // Private messages: only the two people involved can read them
+    match /dms/{id} {
+      allow read: if request.auth != null
+        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['from','to','fromName','text','ts'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string
+        && request.resource.data.fromName is string && request.resource.data.fromName.size() <= 40
+        && request.resource.data.text is string && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 500;
+      allow delete: if request.auth != null && resource.data.from == request.auth.uid;
+    }
+
+    // Voice room link: members only
+    match /private/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
   }
 }
