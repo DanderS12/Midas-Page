@@ -17,6 +17,10 @@ window.SITE = {
   // Optional: a relay (TURN) server for the voice room, for networks that block direct connections.
   // ice: [{urls:"stun:stun.l.google.com:19302"},{urls:"turn:YOUR-SERVER:443",username:"...",credential:"..."}],
 
+  // Voice room relay. Paste the credentials link from your free Metered account here, like:
+  // "https://YOURAPP.metered.live/api/v1/turn/credentials?apiKey=YOURKEY"
+  iceUrl: "https://midas-room.metered.live/api/v1/turn/credentials?apiKey=k1FmmI0T9Hjo15JJSzmCcy2GpJ3VWeD85Kx5K-STpwH5fwu1",
+
   // Songs (one per page, they loop). Songs are files, so they are set here.
   settings: {
     song1: "media/song1.mp4", title1: "Midas Touch",

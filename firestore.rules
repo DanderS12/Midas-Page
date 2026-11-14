@@ -15,8 +15,8 @@ service cloud.firestore {
         && d.story is string && d.story.size() <= 4000
         && hex(d.accent) && hex(d.bg) && hex(d.panel) && hex(d.text)
         && hex(d.border) && hex(d.btn) && hex(d.gc) && hex(d.pc)
-        && d.gs in ['sparkle','dots','stars','hearts','flowers','snow','none']
-        && d.ps in ['paws','hearts','stars','flowers','snow','none']
+        && d.gs in ['sparkle','dots','stars','hearts','flowers','snow','bubbles','fish','skulls','crystalskulls','crystals','bats','pumpkins','ghosts','autumn','leaf420','clover','fireworks','none']
+        && d.ps in ['paws','hearts','stars','flowers','snow','bubbles','fish','skulls','crystalskulls','crystals','bats','pumpkins','ghosts','autumn','leaf420','clover','fireworks','none']
         && d.song is string && d.song.size() <= 300
         && d.songTitle is string && d.songTitle.size() <= 60;
     }
