@@ -9,16 +9,30 @@ service cloud.firestore {
       return c is string && c.matches('^#[0-9a-fA-F]{6}$');
     }
     function okUser(d) {
-      return d.keys().hasOnly(['uid','name','story','accent','bg','panel','text','border','btn','gc','pc','gs','ps','song','songTitle','ts'])
+      return d.keys().hasOnly(['uid','name','story','accent','bg','panel','text','border','btn','gc','pc','gs','ps','rh','cur','cc','tap','tc','css','song','songTitle','list','tag','about','mood','tags','links','av','top','ts'])
         && d.uid == request.auth.uid
         && d.name is string && d.name.size() <= 40
         && d.story is string && d.story.size() <= 4000
         && hex(d.accent) && hex(d.bg) && hex(d.panel) && hex(d.text)
-        && hex(d.border) && hex(d.btn) && hex(d.gc) && hex(d.pc)
-        && d.gs in ['sparkle','dots','stars','hearts','flowers','snow','bubbles','fish','skulls','crystalskulls','crystals','bats','pumpkins','ghosts','autumn','leaf420','clover','fireworks','none']
-        && d.ps in ['paws','hearts','stars','flowers','snow','bubbles','fish','skulls','crystalskulls','crystals','bats','pumpkins','ghosts','autumn','leaf420','clover','fireworks','none']
+        && hex(d.border) && hex(d.btn) && (hex(d.gc) || d.gc == 'rainbow') && (hex(d.pc) || d.pc == 'rainbow')
+        && d.gs in ['sparkle','dots','stars','hearts','flowers','snow','bubbles','fish','skulls','crystalskulls','crystals','bats','pumpkins','ghosts','autumn','leaf420','clover','fireworks','smiles','coins','rain','notes','petals','moons','suns','feathers','bolts','pixels','none']
+        && d.ps in ['paws','hearts','stars','flowers','snow','bubbles','fish','skulls','crystalskulls','crystals','bats','pumpkins','ghosts','autumn','leaf420','clover','fireworks','smiles','coins','rain','notes','petals','moons','suns','feathers','bolts','pixels','none']
+        && d.get('rh', '') in ['','rainbow','pride']
+        && d.get('cur', '') is string && d.get('cur', '').size() <= 24
+        && d.get('tap', '') is string && d.get('tap', '').size() <= 24
+        && (hex(d.get('cc', '#ffd24a')) || d.get('cc', '#ffd24a') == 'rainbow')
+        && (hex(d.get('tc', '#ffd24a')) || d.get('tc', '#ffd24a') == 'rainbow')
+        && d.get('css', '') is string && d.get('css', '').size() <= 4000
         && d.song is string && d.song.size() <= 300
-        && d.songTitle is string && d.songTitle.size() <= 60;
+        && d.songTitle is string && d.songTitle.size() <= 60
+        && d.get('list', []) is list && d.get('list', []).size() <= 6
+        && d.get('tag', '') is string && d.get('tag', '').size() <= 80
+        && d.get('about', '') is string && d.get('about', '').size() <= 1000
+        && d.get('mood', '') is string && d.get('mood', '').size() <= 8
+        && d.get('tags', []) is list && d.get('tags', []).size() <= 10
+        && d.get('links', []) is list && d.get('links', []).size() <= 5
+        && d.get('top', []) is list && d.get('top', []).size() <= 8
+        && d.get('av', '') is string && d.get('av', '').size() < 20000;
     }
 
     // Main site content: everyone reads, only the admin changes
@@ -118,6 +132,99 @@ service cloud.firestore {
       allow read: if request.auth != null
         && (isAdmin() || exists(/databases/$(database)/documents/adults/$(request.auth.uid)));
       allow write: if isAdmin();
+    }
+
+    // Creators and sponsors: everyone reads, only the admin changes
+    match /sponsors/{id} { allow read: if true; allow write: if isAdmin(); }
+
+    // Online status
+    match /presence/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid','st','ts'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.st in ['online','away','dnd','invisible']
+        && request.resource.data.ts is number;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Followers
+    match /follows/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['from','to','ts'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string && request.resource.data.to != request.auth.uid
+        && id == request.resource.data.from + '_' + request.resource.data.to;
+      allow delete: if request.auth != null && resource.data.from == request.auth.uid;
+    }
+
+    // Friends (a request the other person accepts)
+    match /friends/{id} {
+      allow read: if request.auth != null && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['from','to','status','ts'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string && request.resource.data.to != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && id == request.resource.data.from + '_' + request.resource.data.to;
+      allow update: if request.auth != null && resource.data.to == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow delete: if request.auth != null && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+    }
+
+    // Alerts
+    match /notifs/{id} {
+      allow read: if request.auth != null && resource.data.to == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['to','from','fromName','type','text','ts','read'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string
+        && request.resource.data.fromName is string && request.resource.data.fromName.size() <= 40
+        && request.resource.data.type in ['dm','follow','friend_request','friend_accept','wall']
+        && request.resource.data.text is string && request.resource.data.text.size() <= 120
+        && request.resource.data.read == false;
+      allow update: if request.auth != null && resource.data.to == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if request.auth != null && resource.data.to == request.auth.uid;
+    }
+
+    // Wall posts on a member's room
+    match /wall/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['to','from','fromName','text','ts'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string
+        && request.resource.data.fromName is string && request.resource.data.fromName.size() <= 40
+        && request.resource.data.text is string && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 300;
+      allow delete: if request.auth != null && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid || isAdmin());
+    }
+
+    // Room cover banner
+    match /uimg/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['banner'])
+        && request.resource.data.banner is string && request.resource.data.banner.size() < 300000
+        && request.resource.data.banner.matches('data:image/jpeg;base64,.*');
+      allow delete: if request.auth != null && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Corner picture library: everyone reads, only the admin changes
+    match /cpics/{id} { allow read: if true; allow write: if isAdmin(); }
+
+    // Room background picture
+    match /ubg/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['img'])
+        && request.resource.data.img is string && request.resource.data.img.size() < 300000
+        && request.resource.data.img.matches('data:image/jpeg;base64,.*');
+      allow delete: if request.auth != null && (request.auth.uid == uid || isAdmin());
     }
 
     // Voice room (members only): who is in the room, and the connection messages between two members
