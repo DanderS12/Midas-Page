@@ -88,3 +88,20 @@ This revision extends creator-owned page updates with safe external-button field
 - **Cassie Lounge:** separate #cassie landing tab with pink/gold neon, a dark lounge backdrop, decorative CSS web corners, short entrance animation and links into existing public Live Chat/private Messages/Settings. Only this route changes the lounge backdrop; leaving restores the existing site. No separate chat room, new jazz track, copyrighted media or autoplay audio is added. Existing music autoplay remains subject to browser policy. Entrance effect honors Reduce effects/system reduced-motion.
 
 Suggested next messaging work (not implemented here): compact/cozy layout choices, timestamp grouping, accessible emoji reactions, member-only public chat identities, server-enforced rate limits and an optional separate member lounge conversation. Keep typing indicators and read receipts opt-in for privacy. First test current blocking/reporting and large conversations before expanding features.
+
+## Arcade Games
+
+The navigation includes **Arcade Games** (`#arcade`) with heading **Dander's Arcade Games**. These are external game website buttons, not embedded games or executable uploads. No game links are preselected or invented.
+
+Admins manage them in **Admin → Arcade Games**:
+
+1. Select **Add game button** (up to 8).
+2. Enter a title and an HTTPS website URL. URLs containing login credentials and non-HTTPS schemes are rejected.
+3. Optionally select a JPG/PNG/GIF/WebP picture up to 10 MiB input. It is cropped/compressed to a 320×180 JPEG under 60,000 characters. Animation/transparency are not preserved. A very detailed image can be rejected; choose a simpler image. No Firebase Storage bucket or paid upgrade is introduced.
+4. **Remove picture** keeps the game link; **Delete game button** removes its draft entry. These and all title/link changes publish only after **Save arcade games**. Saving an empty list clears the page's links.
+
+Buttons render with or without pictures, open in a new tab with `noopener noreferrer`, and display an external-site notice. The public page has an empty state until the admin adds links. All data is stored in `settings/arcade`, separate from main site settings, to keep the bounded image list below the Firestore document limit. The existing `settings` rule already makes it public-read/admin-write; **this addition does not require another rule change**. Earlier creator-button rules from this PR are still needed for that earlier feature.
+
+Arcade settings are included by the existing content backup's `settings` collection allowlist. Do not put credentials/private information in labels, URLs or pictures. Eight images may still consume approximately half a megabyte plus metadata and use Firestore reads/bandwidth; existing quotas apply. The game count/image validation is in the admin editor; admins already have trusted write access to settings. Invalid public records are omitted by the renderer. No new users/creators receive edit access.
+
+Verification before release: open the public empty page; as admin add a no-image link and an image link, save, reload, edit the title/URL, remove an image and delete a game, then save/reload again. Confirm non-admins cannot write `settings/arcade` with the included emulator rule test. Check external game websites separately—the app does not control their availability, safety, content or privacy policy.
