@@ -2,7 +2,7 @@
   "name": "midas-room",
   "private": true,
   "scripts": {
-    "test": "node --test tests/backend.test.js tests/frontend.test.js",
+    "test": "node --test tests/frontend.test.js",
     "test:rules": "node --test tests/rules.test.js"
   },
   "devDependencies": {

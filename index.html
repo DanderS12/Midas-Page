@@ -123,10 +123,8 @@ select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);
 <script src="config.js"></script>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,query,orderBy,limit,where,updateDoc} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import {getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,sendPasswordResetEmail,signOut,onAuthStateChanged,updatePassword} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getStorage,ref,uploadBytes,getBlob,deleteObject} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import {getFunctions,httpsCallable} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import {getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,query,orderBy,limit,where,updateDoc,runTransaction,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,sendPasswordResetEmail,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 const onSnap=function(ref,next){return onSnapshot(ref,next,function(e){if(window.fbError)window.fbError(e);});};
 const C=window.SITE||{};
 function shrinkTo(file,w,h,q){
@@ -155,14 +153,14 @@ function shrink(file){
       let q=0.75,d=cv.toDataURL("image/jpeg",q);
       while(d.length>850000&&q>0.3){q-=0.1;d=cv.toDataURL("image/jpeg",q);}
       URL.revokeObjectURL(u);
-      if(d.length>900000)rej(new Error("Picture is too big"));else res(d);
+      if(d.length>=900000)rej(new Error("Picture is too big"));else res(d);
     };
     img.onerror=function(){URL.revokeObjectURL(u);rej(new Error("Could not read that picture"));};
     img.src=u;
   });
 }
 if(C.firebase&&C.firebase.apiKey){
-  const app=initializeApp(C.firebase),fs=getFirestore(app),au=getAuth(app),storage=getStorage(app),functions=getFunctions(app,"us-central1");
+  const app=initializeApp(C.firebase),fs=getFirestore(app),au=getAuth(app);
   const wd=function(ref){return {
     set:function(d){return setDoc(ref,d);},
     update:function(d){return updateDoc(ref,d);},
@@ -178,16 +176,30 @@ if(C.firebase&&C.firebase.apiKey){
       doc:function(p){return wd(doc(fs,...p.split("/")));}
     },
     assets:{upload:function(f){return shrink(f).then(function(u){return {url:u,id:""};});},avatar:function(f){return shrinkTo(f,96,96,.7);},corner:function(f){return shrinkTo(f,360,540,.8);},banner:function(f){return shrinkTo(f,900,300,.7);},delete:function(){return Promise.resolve();}},
-    call:function(name,data){return httpsCallable(functions,name)(data||{}).then(function(r){return r.data;});},
-    changePassword:function(password){return updatePassword(au.currentUser,password);},
-    dmUpload:async function(file,from,to,id){
-      if(!['image/jpeg','image/png','image/gif','image/webp'].includes(file.type)||file.size>10*1024*1024||!file.size)throw new Error("Choose a JPG, PNG, GIF or WebP image up to 10 MB.");
-      const path='dm/'+from+'/'+to+'/'+id;
-      await uploadBytes(ref(storage,path),file,{contentType:file.type});
-      return {imagePath:path,imageType:file.type,imageBytes:file.size,imageName:file.name.slice(0,120)};
+    recordSession:async function(){
+      const user=au.currentUser;if(!user)return;
+      const token=await user.getIdTokenResult(),email=(user.email||'').toLowerCase();
+      await setDoc(doc(fs,'memberDirectory',user.uid),{uid:user.uid,email:email});
+      if(email===(C.adminEmail||'').toLowerCase())await setDoc(doc(fs,'siteRoles',user.uid),{role:'admin'});
+      const id=user.uid+'_'+token.claims.auth_time,entry=doc(fs,'loginHistory',id);
+      await runTransaction(fs,async tx=>{if(!(await tx.get(entry)).exists())tx.set(entry,{uid:user.uid,email:email,authTime:token.claims.auth_time,ts:serverTimestamp()});});
     },
-    dmImage:function(path){return getBlob(ref(storage,path),10*1024*1024);},
-    dmRemove:function(path){return deleteObject(ref(storage,path));},
+    archiveRoom:async function(uid){
+      const room=doc(fs,'users',uid),archive=doc(fs,'roomArchive',uid);
+      await runTransaction(fs,async tx=>{const saved=await tx.get(room);if(!saved.exists())throw new Error('Room not found.');tx.set(archive,{room:saved.data(),deletedAt:serverTimestamp()});tx.delete(room);});
+    },
+    restoreRoom:async function(uid,name){
+      const room=doc(fs,'users',uid),archive=doc(fs,'roomArchive',uid);
+      await runTransaction(fs,async tx=>{
+        const existing=await tx.get(room),saved=await tx.get(archive);
+        if(existing.exists())throw new Error('This member already has a room. Nothing was overwritten.');
+        tx.set(room,saved.exists()?saved.data().room:{uid:uid,name:String(name||'Golden Guest').slice(0,40),story:'',accent:'#f5c542',bg:'#0b0805',panel:'#17110a',text:'#f3e6c4',border:'#c8921b',btn:'#f5c542',gs:'sparkle',gc:'#ffd24a',ps:'paws',pc:'#e8b230',song:'',songTitle:'',ts:Date.now()});
+      });
+    },
+    dmUpload:async function(file){
+      if(!['image/jpeg','image/png','image/gif','image/webp'].includes(file.type)||file.size>10*1024*1024||!file.size)throw new Error('Choose a JPG, PNG, GIF or WebP image up to 10 MB.');
+      return {image:await shrink(file),imageName:file.name.slice(0,120)};
+    },
     login:function(pw){return signInWithEmailAndPassword(au,C.adminEmail,pw);},
     signin:function(e,pw){return signInWithEmailAndPassword(au,e,pw);},
     reset:function(e){return sendPasswordResetEmail(au,e);},
@@ -201,7 +213,7 @@ if(C.firebase&&C.firebase.apiKey){
 <script>
 (function(){
 
-var state={photos:[],comments:[],comics:[],likes:[],chat:[],users:[],dmIn:[],dmOut:[],voice:{},age:{},stories:[],myStories:[],adult:false,adults:[],nsfw:[],sponsors:[],cpics:[],followsOut:[],followsIn:[],frOut:[],frIn:[],notifs:[],presence:{},settings:{},announcements:[],directory:[],roles:[],loginHistory:[],blockedEmails:[],blockedIPs:[]};
+var state={photos:[],comments:[],comics:[],likes:[],chat:[],users:[],dmIn:[],dmOut:[],voice:{},age:{},stories:[],myStories:[],adult:false,adults:[],nsfw:[],sponsors:[],cpics:[],followsOut:[],followsIn:[],frOut:[],frIn:[],notifs:[],presence:{},settings:{},announcements:[],directory:[],roles:[],loginHistory:[],blockedEmails:[]};
 var db=null,assets=null,view=document.getElementById("view");
 var isAdmin=false,me=null;
 var errShown=false;
@@ -216,15 +228,17 @@ function store(k,v){try{if(v===undefined)return sessionStorage.getItem(k);sessio
 function lstore(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v);}catch(e){return null;}}
 
 /* ---------- gate ---------- */
-var gate=document.getElementById("gate");
+var gate=document.getElementById("gate"),entranceReady=false;
+var originalEntranceHash="24d7f03d8dc3c3666969e6fa5bb1fac4736d3f1353c28307ed51b320f9dc42d3";
+async function entranceDigest(value){var bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(bytes)).map(function(b){return b.toString(16).padStart(2,"0");}).join("");}
 async function tryGate(){
   var button=document.getElementById("gbtn"),error=document.getElementById("gerr");
-  if(!window.FB){error.textContent="The entrance is connecting. Try again shortly.";return;}
+  if(!entranceReady){error.textContent="The entrance is loading. Please try again shortly.";return;}
   button.disabled=true;error.textContent="";
-  try{var result=await FB.call("verifyEntrance",{password:document.getElementById("gp").value});
-    if(result.ok){store("midas-in","1");gate.style.display="none";document.getElementById("gp").value="";}
+  try{var digest=await entranceDigest(document.getElementById("gp").value);
+    if(digest===(state.settings.entranceHash||originalEntranceHash)){store("midas-in","1");gate.style.display="none";document.getElementById("gp").value="";}
     else error.textContent="That is not the golden word.";
-  }catch(e){error.textContent=e.message||"The entrance needs Firebase setup. Contact the admin.";}
+  }catch(e){error.textContent=e.message||"Could not check the entrance. Please reload and try again.";}
   finally{button.disabled=false;}
 }
 document.getElementById("gbtn").onclick=tryGate;
@@ -257,7 +271,6 @@ function route(){
   roomSong=null;roomFx=null;if(r!=="room")plist=null;
   pageSubs.forEach(function(f){try{f();}catch(e){}});pageSubs=[];
   document.querySelectorAll("#nav a").forEach(function(a){a.classList.toggle("on",a.getAttribute("href")==="#"+(r==="room"?"rooms":r));});
-  dmUrls.forEach(function(u){URL.revokeObjectURL(u);});dmUrls=[];
   view.innerHTML="";
   if(state.announcements.length&&r!=="admin"){
     var notices=h("section",{"class":"card", "aria-label":"Announcements"},[h("h2",{"class":"gold",text:"📣 Announcements"})]);
@@ -363,7 +376,7 @@ function pComic(){
 }
 
 /* ---------- accounts, rooms, messages, voice ---------- */
-var roomUnsub=null,roomSong=null,roomFx=null,roomTrack={},stTab="midas",stEdit=null,stNewId=null,storyTrack={},afterLogin="",nsfwSub=false,dmUnsubs=[],dmWith="",dmBox=null,dmForm=null,dmUrls=[],dmRender=0;
+var roomUnsub=null,roomSong=null,roomFx=null,roomTrack={},stTab="midas",stEdit=null,stNewId=null,storyTrack={},afterLogin="",nsfwSub=false,dmUnsubs=[],dmWith="",dmBox=null,dmForm=null;
 var EMO=["👑","✨","🌟","💛","🪙","🏆","🥇","⭐","💫","🍯","🔱","🐾"];
 function emojiBar(inp){var d=h("div",{"class":"eb"});EMO.forEach(function(e){d.appendChild(h("button",{type:"button",text:e,onclick:function(){inp.value+=e;inp.focus();}}));});return d;}
 function isHex(c){return /^#[0-9a-fA-F]{6}$/.test(c||"");}
@@ -468,16 +481,16 @@ function myName(){var p=me&&profile(me.uid);return (p&&p.name)||(me&&me.email?me
 function onAuthChange(u){
   if(voice.on&&(!u||!me||u.uid!==me.uid))vLeave();
   var ae=(window.SITE||{}).adminEmail;
-  lb.style.display="none";lb.querySelector("img").removeAttribute("src");dmRender++;
+  lb.style.display="none";lb.querySelector("img").removeAttribute("src");
   me=u?{uid:u.uid,email:u.email}:null;
   isAdmin=!!(u&&ae&&u.email&&u.email.toLowerCase()===ae.toLowerCase());
   dmUnsubs.forEach(function(f){try{f();}catch(e){}});dmUnsubs=[];
   state.users=[];state.dmIn=[];state.dmOut=[];state.voice={};state.age={};state.myStories=[];state.adult=false;state.adults=[];state.nsfw=[];nsfwSub=false;state.followsOut=[];state.followsIn=[];state.frOut=[];state.frIn=[];state.notifs=[];state.presence={};seenN={};seenInit=false;
-  state.directory=[];state.loginHistory=[];state.blockedEmails=[];state.blockedIPs=[];
+  state.directory=[];state.loginHistory=[];state.blockedEmails=[];
   if(isAdmin)gate.style.display="none";else if(store("midas-in")!=="1"&&location.hash!=="#admin")gate.style.display="flex";
   if(me&&db){
-    FB.call("recordSession").catch(function(e){if(e.code==="functions/permission-denied"){FB.logout();alert("This account or sign-in address is blocked.");}});
-    if(isAdmin)[["memberDirectory","directory"],["loginHistory","loginHistory"],["blockedEmails","blockedEmails"],["blockedIPs","blockedIPs"]].forEach(function(pair){
+    FB.recordSession().catch(window.fbError);
+    if(isAdmin)[["memberDirectory","directory"],["loginHistory","loginHistory"],["blockedEmails","blockedEmails"]].forEach(function(pair){
       dmUnsubs.push(db.collection(pair[0]).onSnapshot(function(s){state[pair[1]]=snap(s);if(location.hash==="#admin")refresh();},pair[0]==="loginHistory"?{limit:100}:undefined));
     });
     dmUnsubs.push(db.collection("users").onSnapshot(function(s){state.users=snap(s);refresh();}));
@@ -988,16 +1001,14 @@ function pNsfw(){
 }
 function renderDM(){
   if(!dmBox||!document.body.contains(dmBox))return;
-  dmRender++;var renderVersion=dmRender;dmUrls.forEach(function(u){URL.revokeObjectURL(u);});dmUrls=[];
   dmBox.innerHTML="";
   dmBox.style.display=dmWith?"block":"none";if(dmForm)dmForm.style.display=dmWith?"block":"none";if(!dmWith)return;
   var all=state.dmIn.filter(function(m){return m.from===dmWith;}).concat(state.dmOut.filter(function(m){return m.to===dmWith;})).sort(function(a,b){return a.ts-b.ts;});
   all.forEach(function(m){
     var mine=m.from===me.uid;
     var row=h("div",{"class":"cm"},[h("b",{"class":roleClass(m.from),text:mine?"You":(m.fromName||"Them")}),h("small",{text:new Date(m.ts).toLocaleString()}),h("p",{text:m.text})]);
-    if(m.imagePath){
-      var image=h("img",{alt:m.imageName||"Private image",style:"max-width:100%;max-height:320px;display:block;border-radius:10px;cursor:zoom-in"}),status=h("small",{text:"Loading private image…"});row.appendChild(status);
-      FB.dmImage(m.imagePath).then(function(blob){if(renderVersion!==dmRender||!row.isConnected)return;var url=URL.createObjectURL(blob);dmUrls.push(url);image.src=url;image.onclick=function(){zoom(url);};status.remove();row.appendChild(image);}).catch(function(){if(row.isConnected)status.textContent="Could not load image. Check storage access and CORS setup.";});
+    if(m.image&&m.image.indexOf("data:image/jpeg;base64,")===0){
+      var image=h("img",{src:m.image,alt:m.imageName||"Private image",style:"max-width:100%;max-height:320px;display:block;border-radius:10px;cursor:zoom-in",onclick:function(){zoom(m.image);}});row.appendChild(image);
     }
     dmBox.appendChild(row);
   });
@@ -1024,17 +1035,17 @@ function pDM(){
     sending=true;sendButton.disabled=true;er.textContent="Sending…";
     var id="d"+crypto.randomUUID(),attachment=null;
     try{
-      if(file)attachment=await FB.dmUpload(file,sender,to,id);
+      if(file)attachment=await FB.dmUpload(file);
       if(!me||me.uid!==sender)throw new Error("Your account changed. Log in and try again.");
       await db.collection("dms").doc(id).set(Object.assign({from:sender,to:to,fromName:senderName,text:t,ts:Date.now()},attachment||{}));
       notify(to,"dm","sent you a private message");tx.value="";imageFile.value="";er.textContent="";
-    }catch(e){if(attachment)FB.dmRemove(attachment.imagePath).catch(function(){});er.textContent="Could not send: "+(e.message||"error");}
+    }catch(e){er.textContent="Could not send: "+(e.message||"error");}
     finally{sending=false;sendButton.disabled=false;}
   }
   tx.addEventListener("keydown",function(e){if(e.key==="Enter")send();});
   c.appendChild(sel);
   if(!state.users.some(function(u){return u.id!==me.uid;}))c.appendChild(h("p",{"class":"note",text:"No other members have joined yet."}));
-  dmForm=h("div",{},[tx,emojiBar(tx),h("label",{text:"Attach an image (JPG, PNG, GIF, WebP; up to 10 MB)"}),imageFile,er,sendButton]);
+  dmForm=h("div",{},[tx,emojiBar(tx),h("label",{text:"Attach an image (up to 10 MB input; compressed JPEG, animation removed)"}),imageFile,er,sendButton]);
   c.appendChild(dmBox);c.appendChild(dmForm);
   view.appendChild(c);renderDM();
 }
@@ -1224,7 +1235,7 @@ function likeBtn(p){
     (mine?r.delete():r.set({pid:p.id,vid:me,ts:Date.now()})).catch(function(){});
   }});
 }
-function refresh(){var t=document.activeElement&&document.activeElement.tagName;if(t==="INPUT"||t==="TEXTAREA")return;if(stTab==="new"&&(location.hash||"")==="#story")return;route();}
+function refresh(){var t=document.activeElement&&document.activeElement.tagName;if(t==="INPUT"||t==="TEXTAREA"||document.querySelector("#view details[open]")||Array.from(document.querySelectorAll("#view input[type=file]")).some(function(f){return f.files.length>0;}))return;if(stTab==="new"&&(location.hash||"")==="#story")return;route();}
 
 /* ---------- live chat ---------- */
 var chatBox=null,lastSend=0;
@@ -1501,9 +1512,9 @@ function pGive(){
 
 /* ---------- admin ---------- */
 function saveSettings(patch){
-  Object.assign(state.settings,patch);
   if(!db)return Promise.reject({message:"not signed in"});
-  return db.doc("settings/site").set(state.settings);
+  var next=Object.assign({},state.settings,patch);
+  return db.doc("settings/site").set(next).then(function(){Object.assign(state.settings,patch);});
 }
 function pAdmin(){
   if(!isAdmin){
@@ -1672,29 +1683,29 @@ function pCreator(id){
       await db.collection("sponsors").doc(id).update({name:name.value.trim(),blurb:body.value,link:link.value.trim(),img:img});status.textContent="Saved.";picture.value="";
     }catch(e){status.textContent="Could not save: "+e.message;}
   }}));
-  var password=h("input",{type:"password",minlength:"8",maxlength:"128",autocomplete:"new-password","aria-label":"New creator account password"});
-  editor.appendChild(h("label",{text:"Change creator account password (also changes their login password)"}));editor.appendChild(password);
-  editor.appendChild(h("button",{text:"Change password",onclick:async function(){
-    if(password.value.length<8){status.textContent="Use at least 8 characters.";return;}
-    try{
-      if(isAdmin&&page.owner!==me.uid)await FB.call("setCreatorPassword",{id:id,password:password.value});
-      else await FB.changePassword(password.value);
-      password.value="";status.textContent="Password changed.";
-    }catch(e){status.textContent=e.code==="auth/requires-recent-login"?"Log out and log in again before changing your password.":"Could not change password: "+e.message;}
-  }}));
+  if(me&&page.owner===me.uid){
+    editor.appendChild(h("button",{text:"Email me a password reset link",onclick:function(){FB.reset(me.email).then(function(){status.textContent="Reset email sent. Check your inbox and spam folder.";}).catch(function(e){status.textContent=e.message;});}}));
+  }
   if(isAdmin){
     var ownerEmail=h("input",{type:"email",placeholder:"Creator's signup email","aria-label":"Creator owner email"});
-    editor.appendChild(h("label",{text:"Assign this page to a creator account"}));editor.appendChild(ownerEmail);
-    editor.appendChild(h("button",{text:"Assign creator",onclick:async function(){try{await FB.call("assignCreator",{id:id,email:ownerEmail.value});status.textContent="Creator assigned. They can now edit after logging in.";}catch(e){status.textContent=e.message;}}}));
+    editor.appendChild(h("label",{text:"Assign this page to a creator account (they must sign in once first)"}));editor.appendChild(ownerEmail);
+    editor.appendChild(h("button",{text:"Assign creator",onclick:async function(){try{var owner=directoryMember(ownerEmail.value);await db.collection("sponsors").doc(id).update({owner:owner.id});page.owner=owner.id;status.textContent="Creator assigned. They can edit after logging in.";}catch(e){status.textContent=e.message;}}}));
+    editor.appendChild(h("button",{text:"Send creator password reset email",onclick:async function(){try{var owner=state.directory.find(function(x){return x.id===page.owner;});if(!owner)throw new Error("Assign a creator whose account has signed in first.");await FB.reset(owner.email);status.textContent="Reset link sent to the creator. Only they can choose the new password.";}catch(e){status.textContent=e.message;}}}));
   }
   editor.appendChild(status);view.appendChild(editor);
+}
+function directoryMember(email){
+  var normalized=String(email||"").trim().toLowerCase();
+  var row=state.directory.find(function(x){return x.email===normalized;});
+  if(!row)throw new Error("Ask this member to log in once after the update so their signup email is available.");
+  return row;
 }
 function adminEmailFor(uid){var row=state.directory.find(function(x){return x.id===uid;});return row?row.email:"Email available after next login; restore by signup email below.";}
 function adminCommunity(c,say){
   c.appendChild(h("h3",{"class":"gold",text:"Entrance settings"}));
   c.appendChild(h("p",{"class":"note",text:"The entrance is a visitor courtesy screen, not protection for public files or creator pages. Admin access always requires your account login."}));
   var entrance=h("input",{type:"password",minlength:"8",maxlength:"128",autocomplete:"new-password",placeholder:"New main entrance password","aria-label":"New entrance password"});c.appendChild(entrance);
-  c.appendChild(h("button",{text:"Change entrance password",onclick:async function(){try{await FB.call("setEntrancePassword",{password:entrance.value});entrance.value="";say("Entrance password changed for new sessions.");}catch(e){say(e.message);}}}));
+  c.appendChild(h("button",{text:"Change entrance password",onclick:async function(){try{if(entrance.value.length<8||entrance.value.length>128)throw new Error("Use 8–128 characters.");await saveSettings({entranceHash:await entranceDigest(entrance.value)});entrance.value="";say("Entrance password changed for new sessions.");}catch(e){say(e.message);}}}));
   var background=h("input",{type:"file",accept:"image/*","aria-label":"Entrance background"});c.appendChild(h("label",{text:"Entrance background"}));c.appendChild(background);
   c.appendChild(h("button",{text:"Save entrance background",onclick:async function(){try{if(!background.files[0])throw new Error("Choose an image first.");await saveSettings({entranceBackground:(await assets.upload(background.files[0])).url});background.value="";applySite();say("Entrance background saved.");}catch(e){say(e.message);}}}));
   c.appendChild(h("button",{"class":"del",text:"Remove entrance background",onclick:function(){saveSettings({entranceBackground:""}).then(function(){applySite();say("Background removed.");}).catch(function(e){say(e.message);});}}));
@@ -1704,20 +1715,20 @@ function adminCommunity(c,say){
   state.announcements.forEach(function(a){c.appendChild(h("div",{"class":"cm"},[h("p",{text:a.text}),h("button",{"class":"del",text:"Remove announcement",onclick:function(){db.collection("announcements").doc(a.id).delete().catch(function(e){say(e.message);});}})]));});
   c.appendChild(h("h3",{"class":"gold",text:"Member name styles"}));
   var styleEmail=h("input",{type:"email",placeholder:"Member signup email","aria-label":"Name style member email"}),styleRole=h("select",{"aria-label":"Member name style"},[h("option",{value:"creator",text:"Creator"}),h("option",{value:"sponsor",text:"Sponsor"}),h("option",{value:"member",text:"Regular member"})]);c.appendChild(styleEmail);c.appendChild(styleRole);
-  c.appendChild(h("button",{text:"Save name style",onclick:async function(){try{await FB.call("setMemberStyle",{email:styleEmail.value,role:styleRole.value});say("Name style saved. Styles do not grant editing or admin permissions.");}catch(e){say(e.message);}}}));
+  c.appendChild(h("button",{text:"Save name style",onclick:async function(){try{var member=directoryMember(styleEmail.value);if(member.email===(window.SITE||{}).adminEmail)throw new Error("The admin keeps the admin style.");var roleDoc=db.collection("siteRoles").doc(member.id);if(styleRole.value==="member")await roleDoc.delete();else await roleDoc.set({role:styleRole.value});say("Name style saved. Styles do not grant editing or admin permissions.");}catch(e){say(e.message);}}}));
   c.appendChild(h("h3",{"class":"gold",text:"Room recovery"}));
   var email=h("input",{type:"email",placeholder:"Member's signup email","aria-label":"Restore room by email"});c.appendChild(email);
-  c.appendChild(h("button",{text:"Restore / add room",onclick:async function(){try{await FB.call("restoreRoom",{email:email.value});say("Room restored, or a new empty room created if no backup existed. Existing rooms are never overwritten.");}catch(e){say(e.message);}}}));
+  c.appendChild(h("button",{text:"Restore / add room",onclick:async function(){try{var member=directoryMember(email.value);await FB.restoreRoom(member.id,member.email.split("@")[0]);say("Room restored, or a new empty room created if no backup existed. Existing rooms are never overwritten.");}catch(e){say(e.message);}}}));
   c.appendChild(h("p",{"class":"note",text:"Rooms deleted with the button below are archived before removal. Older deletions without a backup can only be recreated; old content cannot be recovered."}));
-  state.users.forEach(function(u){c.appendChild(h("div",{"class":"cm"},[h("b",{text:u.name}),h("small",{text:adminEmailFor(u.id)}),h("button",{"class":"del",text:"Archive and delete room",onclick:async function(){if(!confirm("Archive and remove this room? The account and media will remain."))return;try{await FB.call("deleteRoom",{uid:u.id});say("Room archived and removed.");}catch(e){say(e.message);}}})]));});
-  c.appendChild(h("h3",{"class":"gold",text:"Email / IP sign-in blacklist"}));
-  c.appendChild(h("p",{"class":"note",text:"Email blocks restrict member data immediately. Exact IP blocks stop future registrations, logins and entrance checks—not public static files. Existing sessions without the new IP claim must log in again. Identity Platform blocking functions must be deployed for sign-in blocking."}));
-  var kind=h("select",{"aria-label":"Block type"},[h("option",{value:"email",text:"Email"}),h("option",{value:"ip",text:"IP address"})]),value=h("input",{placeholder:"Email or exact IP address","aria-label":"Address to block"});c.appendChild(kind);c.appendChild(value);
-  c.appendChild(h("button",{text:"Block",onclick:async function(){try{await FB.call("manageBlock",{kind:kind.value,value:value.value});value.value="";say("Block saved.");}catch(e){say(e.message);}}}));
-  [["email",state.blockedEmails],["ip",state.blockedIPs]].forEach(function(pair){pair[1].forEach(function(b){c.appendChild(h("div",{"class":"cm"},[h("span",{text:pair[0]+": "+b.value+" "}),h("button",{"class":"del",text:"Unblock",onclick:async function(){try{await FB.call("manageBlock",{kind:pair[0],value:b.value,remove:true});say("Unblocked.");}catch(e){say(e.message);}}})]));});});
-  c.appendChild(h("h3",{"class":"gold",text:"Recent login history (latest 100)"}));
-  c.appendChild(h("p",{"class":"note",text:"Recorded from verified Firebase sessions after this update, not historical sign-ins. Email and IP are admin-only. Session observation may occur just after authentication."}));
-  state.loginHistory.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(entry){c.appendChild(h("div",{"class":"cm"},[h("b",{text:entry.email}),h("small",{text:new Date(entry.ts).toLocaleString()}),h("p",{text:entry.ip||"IP unavailable"})]));});
+  state.users.forEach(function(u){c.appendChild(h("div",{"class":"cm"},[h("b",{text:u.name}),h("small",{text:adminEmailFor(u.id)}),h("button",{"class":"del",text:"Archive and delete room",onclick:async function(){if(!confirm("Archive and remove this room? The account and media will remain."))return;try{await FB.archiveRoom(u.id);say("Room archived and removed.");}catch(e){say(e.message);}}})]));});
+  c.appendChild(h("h3",{"class":"gold",text:"Email member-access blacklist"}));
+  c.appendChild(h("p",{"class":"note",text:"Blocks signed-in access to member data, not Firebase account login or public pages. IP blocks are managed separately in Vercel Firewall, not here."}));
+  var blockedEmail=h("input",{type:"email",placeholder:"Email to block","aria-label":"Email to block"});c.appendChild(blockedEmail);
+  c.appendChild(h("button",{text:"Block email",onclick:async function(){try{var value=blockedEmail.value.trim().toLowerCase();if(!/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(value)||value.length>254)throw new Error("Enter a valid email.");if(value===(window.SITE||{}).adminEmail)throw new Error("The admin cannot be blocked.");await db.collection("blockedEmails").doc(value).set({value:value,ts:Date.now()});blockedEmail.value="";say("Member data blocked for this email.");}catch(e){say(e.message);}}}));
+  state.blockedEmails.forEach(function(b){c.appendChild(h("div",{"class":"cm"},[h("span",{text:b.value+" "}),h("button",{"class":"del",text:"Unblock",onclick:async function(){try{await db.collection("blockedEmails").doc(b.id).delete();say("Unblocked.");}catch(e){say(e.message);}}})]));});
+  c.appendChild(h("h3",{"class":"gold",text:"Recent observed logins (latest 100)"}));
+  c.appendChild(h("p",{"class":"note",text:"Admin-only record of sessions observed by this website, not a complete security audit. No IP addresses are collected. Older logins are unavailable."}));
+  state.loginHistory.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(entry){c.appendChild(h("div",{"class":"cm"},[h("b",{text:entry.email}),h("small",{text:new Date(entry.authTime*1000).toLocaleString()}),h("p",{text:"Observed: "+new Date(entry.ts).toLocaleString()})]));});
 }
 /* Capture a separate audio stream; never reroute the original player through Web Audio.
    Unsupported/cross-origin capture gracefully leaves playback and visuals unchanged. */
@@ -1748,18 +1759,18 @@ function adminCommunity(c,say){
 })();
 
 /* ---------- data ---------- */
-function snap(s){return s.docs.map(function(d){var o=d.data();o.id=d.id;return o;});}
+function snap(s){return s.docs.map(function(d){var o=d.data();if(o.ts&&typeof o.ts.toMillis==="function")o.ts=o.ts.toMillis();o.id=d.id;return o;});}
 function loaded(){
   db.collection("siteRoles").onSnapshot(function(s){state.roles=snap(s);refresh();});
   db.collection("announcements").onSnapshot(function(s){state.announcements=snap(s);refresh();},{limit:20});
-  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});applySite();applyCorner();refresh();});
+  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});entranceReady=true;applySite();applyCorner();refresh();});
   db.collection("photos").onSnapshot(function(s){state.photos=snap(s);refresh();});
   db.collection("comics").onSnapshot(function(s){state.comics=snap(s);refresh();});
   db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")route();});
   db.collection("likes").onSnapshot(function(s){state.likes=snap(s);if((location.hash||"#home")==="#home")refresh();});
   db.collection("chat").onSnapshot(function(s){state.chat=snap(s);renderChat();},{limit:100});
   db.collection("stories").onSnapshot(function(s){state.stories=snap(s);if((location.hash||"")==="#story")refresh();});
-  db.collection("sponsors").onSnapshot(function(s){state.sponsors=snap(s);if((location.hash||"")==="#sponsors")refresh();});
+  db.collection("sponsors").onSnapshot(function(s){state.sponsors=snap(s);if((location.hash||"")==="#sponsors"||(location.hash||"").indexOf("#creator-")===0)refresh();});
   db.collection("cpics").onSnapshot(function(s){state.cpics=snap(s);applyCorner();if((location.hash||"")==="#admin")refresh();});
 }
 (function(){
