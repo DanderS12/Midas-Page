@@ -83,7 +83,8 @@ audio{width:100%;margin:12px 0}
 select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);border:1px solid var(--gold2);border-radius:8px;margin-bottom:10px;font:inherit}
 .like.on{background:linear-gradient(135deg,var(--gold2),var(--gold));color:var(--btnt,#1a1204)}
 @media (prefers-reduced-motion:reduce){.gold,.disc.spin{animation:none}}
-#reduce-effects{font-size:.72rem;padding:7px 10px;float:right;margin-bottom:8px}
+.visitor-controls{display:flex;justify-content:flex-end;margin-bottom:8px}
+#reduce-effects{font-size:.72rem;padding:7px 10px}
 .reduce-effects #glitter,.reduce-effects #fxtop{display:none}
 .reduce-effects .gold,.reduce-effects .disc.spin{animation:none!important}
 .reduce-effects .beat-active{box-shadow:none}
@@ -124,7 +125,7 @@ select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);
 <div id="bar"><span id="bt"></span><audio id="au" controls loop preload="auto"></audio></div>
 
 <div class="wrap">
-  <button id="reduce-effects" type="button" aria-pressed="false">Reduce effects: off</button>
+  <div class="visitor-controls"><button id="reduce-effects" type="button" aria-pressed="false">Reduce effects: off</button></div>
   <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1><span>👑</span> <span class="gold">The Midas Room</span> <span>👑</span></h1><p class="sub">A private gallery of golden moments</p></header>
   <nav id="nav">
     <button id="menubtn" type="button">☰ Menu</button>
