@@ -9,6 +9,54 @@ service cloud.firestore {
       return request.auth != null && (isAdmin() ||
         !exists(/databases/$(database)/documents/blockedEmails/$(request.auth.token.email.lower())));
     }
+    function canContact(from, to) {
+      return !exists(/databases/$(database)/documents/memberBlocks/$(from)/blocked/$(to))
+        && !exists(/databases/$(database)/documents/memberBlocks/$(to)/blocked/$(from));
+    }
+    match /memberBlocks/{owner}/blocked/{target} {
+      allow read: if memberAllowed() && request.auth.uid == owner;
+      allow create: if memberAllowed() && request.auth.uid == owner && owner != target
+        && request.resource.data.keys().hasOnly(['target','ts'])
+        && request.resource.data.target == target && request.resource.data.ts is number;
+      allow delete: if memberAllowed() && request.auth.uid == owner;
+    }
+    match /reports/{id} {
+      allow read: if isAdmin();
+      allow create: if memberAllowed()
+        && request.resource.data.keys().hasOnly(['reporter','target','messageId','reason','status','ts'])
+        && request.resource.data.reporter == request.auth.uid
+        && request.resource.data.target is string && request.resource.data.target != request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.target))
+        && request.resource.data.reason is string && request.resource.data.reason.size() > 0 && request.resource.data.reason.size() <= 1000
+        && request.resource.data.status == 'open' && request.resource.data.ts is number
+        && request.resource.data.messageId is string && request.resource.data.messageId.size() <= 128
+        && (request.resource.data.messageId == '' ||
+          (get(/databases/$(database)/documents/dms/$(request.resource.data.messageId)).data.to == request.auth.uid
+           && get(/databases/$(database)/documents/dms/$(request.resource.data.messageId)).data.from == request.resource.data.target));
+      allow update: if isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['open','resolved'];
+    }
+    function validNewName(name) {
+      return name is string && name.size() >= 3 && name.size() <= 24
+        && name.matches('^[A-Za-z0-9_-]+( [A-Za-z0-9_-]+)*$');
+    }
+    function ownsName(uid, name) {
+      return validNewName(name)
+        && get(/databases/$(database)/documents/settings/site).data.get('namesReady', false) == true
+        && getAfter(/databases/$(database)/documents/displayNames/$(name.lower())).data.uid == uid;
+    }
+    match /displayNames/{key} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if isAdmin() || (memberAllowed()
+        && request.resource.data.keys().hasOnly(['uid']) && request.resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.name.lower() == key
+        && validNewName(getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.name));
+      allow update: if isAdmin() || (memberAllowed() && resource.data.uid == request.auth.uid
+        && request.resource.data == resource.data);
+      allow delete: if isAdmin() || (memberAllowed() && resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.name.lower() != key);
+    }
     function hex(c) {
       return c is string && c.matches('^#[0-9a-fA-F]{6}$');
     }
@@ -73,9 +121,11 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if memberAllowed();
       allow create: if memberAllowed() && (request.auth.uid == uid || isAdmin())
-        && okUser(request.resource.data, uid);
-      allow update: if memberAllowed() && request.auth.uid == uid
-        && okUser(request.resource.data, uid);
+        && okUser(request.resource.data, uid)
+        && (isAdmin() || ownsName(uid, request.resource.data.name));
+      allow update: if memberAllowed() && (request.auth.uid == uid || isAdmin())
+        && okUser(request.resource.data, uid)
+        && (isAdmin() || request.resource.data.name == resource.data.name || ownsName(uid, request.resource.data.name));
       // Preserve an exact copy atomically before removing a room.
       allow delete: if isAdmin()
         && getAfter(/databases/$(database)/documents/roomArchive/$(uid)).data.room == resource.data;
@@ -102,7 +152,7 @@ service cloud.firestore {
     match /dms/{id} {
       allow read: if memberAllowed()
         && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
-      allow create: if memberAllowed()
+      allow create: if memberAllowed() && canContact(request.auth.uid, request.resource.data.to)
         && request.resource.data.keys().hasOnly(['from','to','fromName','text','ts','image','imageName'])
         && request.resource.data.from == request.auth.uid
         && request.resource.data.to is string && request.resource.data.to.size() > 0
@@ -115,6 +165,9 @@ service cloud.firestore {
         && (request.resource.data.get('image', '') == '' || request.resource.data.image.matches('data:image/jpeg;base64,.*'))
         && request.resource.data.get('imageName', '') is string
         && request.resource.data.get('imageName', '').size() <= 120;
+      allow update: if memberAllowed() && resource.data.to == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        && request.resource.data.read == true;
       allow delete: if memberAllowed() && resource.data.from == request.auth.uid;
     }
 
@@ -178,7 +231,12 @@ service cloud.firestore {
     }
     match /announcements/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['text','ts','expiresAt'])
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000
+        && request.resource.data.ts is number
+        && request.resource.data.get('expiresAt', 0) is number && request.resource.data.get('expiresAt', 0) >= 0;
+      allow delete: if isAdmin();
     }
     // Only a member's own token email can populate the private directory.
     match /memberDirectory/{uid} {
@@ -224,7 +282,7 @@ service cloud.firestore {
     // Followers
     match /follows/{id} {
       allow read: if memberAllowed();
-      allow create: if memberAllowed()
+      allow create: if memberAllowed() && canContact(request.auth.uid, request.resource.data.to)
         && request.resource.data.keys().hasOnly(['from','to','ts'])
         && request.resource.data.from == request.auth.uid
         && request.resource.data.to is string && request.resource.data.to != request.auth.uid
@@ -235,7 +293,7 @@ service cloud.firestore {
     // Friends (a request the other person accepts)
     match /friends/{id} {
       allow read: if memberAllowed() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
-      allow create: if memberAllowed()
+      allow create: if memberAllowed() && canContact(request.auth.uid, request.resource.data.to)
         && request.resource.data.keys().hasOnly(['from','to','status','ts'])
         && request.resource.data.from == request.auth.uid
         && request.resource.data.to is string && request.resource.data.to != request.auth.uid
@@ -251,7 +309,7 @@ service cloud.firestore {
     // Alerts
     match /notifs/{id} {
       allow read: if memberAllowed() && resource.data.to == request.auth.uid;
-      allow create: if memberAllowed()
+      allow create: if memberAllowed() && canContact(request.auth.uid, request.resource.data.to)
         && request.resource.data.keys().hasOnly(['to','from','fromName','type','text','ts','read'])
         && request.resource.data.from == request.auth.uid
         && request.resource.data.to is string
@@ -267,7 +325,7 @@ service cloud.firestore {
     // Wall posts on a member's room
     match /wall/{id} {
       allow read: if memberAllowed();
-      allow create: if memberAllowed()
+      allow create: if memberAllowed() && canContact(request.auth.uid, request.resource.data.to)
         && request.resource.data.keys().hasOnly(['to','from','fromName','text','ts'])
         && request.resource.data.from == request.auth.uid
         && request.resource.data.to is string

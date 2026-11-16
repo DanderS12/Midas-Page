@@ -67,3 +67,50 @@ test('room deletion requires admin and an exact atomic archive; admin can restor
   await assertSucceeds(batch.commit());await assertSucceeds(setDoc(doc(db,'users/creator'),room));
   await assertFails(getDoc(doc(user('stranger').firestore(),'roomArchive/creator')));
 });
+test('only the recipient can mark a DM read, without changing its content',async()=>{
+  await seed();await assertSucceeds(updateDoc(doc(user('receiver').firestore(),'dms/message'),{read:true}));
+  await assertFails(updateDoc(doc(user('sender').firestore(),'dms/message'),{read:true}));
+  await assertFails(updateDoc(doc(user('receiver').firestore(),'dms/message'),{read:true,text:'tampered'}));
+});
+test('member blocks prevent new contact in either direction and cannot be removed by the target',async()=>{
+  await seed();await assertSucceeds(setDoc(doc(user('receiver').firestore(),'memberBlocks/receiver/blocked/sender'),{target:'sender',ts:1}));
+  await assertFails(setDoc(doc(user('sender').firestore(),'dms/new'),message));
+  await assertFails(setDoc(doc(user('receiver').firestore(),'dms/reverse'),{...message,from:'receiver',to:'sender'}));
+  await assertFails(setDoc(doc(user('sender').firestore(),'friends/sender_receiver'),{from:'sender',to:'receiver',status:'pending',ts:1}));
+  await assertFails(setDoc(doc(user('sender').firestore(),'wall/post'),{from:'sender',to:'receiver',fromName:'Sender',text:'Hello',ts:1}));
+  await assertFails(deleteDoc(doc(user('sender').firestore(),'memberBlocks/receiver/blocked/sender')));
+  await assertFails(getDoc(doc(user('sender').firestore(),'memberBlocks/receiver/blocked/sender')));
+  await assertSucceeds(deleteDoc(doc(user('receiver').firestore(),'memberBlocks/receiver/blocked/sender')));
+  await assertSucceeds(setDoc(doc(user('sender').firestore(),'dms/after'),message));
+});
+test('reports are admin-readable only and message references must belong to the reporter',async()=>{
+  await seed();const report={reporter:'receiver',target:'sender',messageId:'message',reason:'Unwanted contact',status:'open',ts:1};
+  await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),'users/sender'),{...room,uid:'sender'}));
+  await assertSucceeds(setDoc(doc(user('receiver').firestore(),'reports/one'),report));
+  await assertFails(getDoc(doc(user('sender').firestore(),'reports/one')));
+  await assertFails(getDoc(doc(user('receiver').firestore(),'reports/one')));
+  await assertSucceeds(getDoc(doc(admin(),'reports/one')));
+  await assertFails(setDoc(doc(user('stranger').firestore(),'reports/forged'),{...report,reporter:'stranger'}));
+  await assertFails(updateDoc(doc(user('receiver').firestore(),'reports/one'),{status:'resolved'}));
+  await assertSucceeds(updateDoc(doc(admin(),'reports/one'),{status:'resolved'}));
+});
+test('announcement expiration is numeric and admin-only',async()=>{
+  await assertSucceeds(setDoc(doc(admin(),'announcements/news'),{text:'News',ts:1,expiresAt:2000}));
+  await assertFails(setDoc(doc(admin(),'announcements/invalid'),{text:'News',ts:1,expiresAt:'tomorrow'}));
+  await assertFails(setDoc(doc(user('sender').firestore(),'announcements/forged'),{text:'News',ts:1,expiresAt:0}));
+});
+test('new room creation requires an atomic unique-name reservation',async()=>{
+  await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),'settings/site'),{namesReady:true}));
+  const first=user('first').firestore(),second=user('second').firestore();
+  await assertFails(setDoc(doc(first,'users/first'),{...room,uid:'first',name:'Unique Name'}));
+  const batch=writeBatch(first);batch.set(doc(first,'displayNames/unique name'),{uid:'first'});batch.set(doc(first,'users/first'),{...room,uid:'first',name:'Unique Name'});await assertSucceeds(batch.commit());
+  const duplicate=writeBatch(second);duplicate.set(doc(second,'displayNames/unique name'),{uid:'second'});duplicate.set(doc(second,'users/second'),{...room,uid:'second',name:'UNIQUE NAME'});await assertFails(duplicate.commit());
+  await assertFails(updateDoc(doc(first,'users/first'),{name:'Unreserved'}));
+  await assertFails(deleteDoc(doc(second,'displayNames/unique name')));
+  await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(),'displayNames/unique name')));
+  await assertFails(getDocs(collection(env.unauthenticatedContext().firestore(),'displayNames')));
+});
+test('legacy profile edits preserve their name without forcing an automatic rename',async()=>{
+  await seed();await assertSucceeds(updateDoc(doc(user('creator').firestore(),'users/creator'),{about:'My new bio'}));
+  await assertFails(updateDoc(doc(user('creator').firestore(),'users/creator'),{name:'Unclaimed'}));
+});

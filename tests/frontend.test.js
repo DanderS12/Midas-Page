@@ -8,6 +8,7 @@ const classic = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].filte
 function app() {
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.test/' });
   const w = dom.window;
+  w.eval(fs.readFileSync(require.resolve('../name-policy.js'),'utf8'));
   w.TextEncoder=TextEncoder;Object.defineProperty(w.crypto,'subtle',{value:webcrypto.subtle});
   w.matchMedia = () => ({ matches: true, addEventListener() {} });
   w.requestAnimationFrame = () => 1;w.cancelAnimationFrame = () => {};
@@ -16,7 +17,7 @@ function app() {
   w.HTMLMediaElement.prototype.play = () => Promise.resolve();w.HTMLMediaElement.prototype.pause = () => {};w.HTMLMediaElement.prototype.load = () => {};
   w.URL.createObjectURL = () => 'blob:test';w.URL.revokeObjectURL = () => {};
   w.eval(classic.replace('\nroute();\n})();', `
-    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,
+    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,pRooms:pRooms,memberSafety:memberSafety,renderDM:renderDM,markConversationRead:markConversationRead,updateMessageBadge:updateMessageBadge,activeAnnouncements:activeAnnouncements,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,themeOf:themeOf,THEMES:THEMES,applySite:applySite,
       entranceReady:function(){entranceReady=true;},
       setup:function(user,admin,adapter){me=user;isAdmin=admin;db=adapter;assets={upload:async function(){return {url:'data:image/jpeg;base64,test'};}};},
       recipient:function(uid){dmWith=uid;},roleClass:roleClass};
@@ -94,9 +95,9 @@ test('10 MiB image input is compressed to JPEG before being stored',async()=>{
 });
 test('restore refuses to overwrite an existing room, otherwise restores an archive',async()=>{
   const a=app(),writes=[];let exists=true;
-  sdk(a,{doc:(_,col,id)=>col+'/'+id,runTransaction:async(_,callback)=>callback({get:async path=>path.startsWith('users/')?{exists:()=>exists}:{exists:()=>true,data:()=>({room:{uid:'member',name:'Recovered'}})},set:(path,data)=>writes.push({path,data})})});
+  sdk(a,{doc:(_,col,id)=>col+'/'+id,runTransaction:async(_,callback)=>callback({get:async path=>path.startsWith('users/')?{exists:()=>exists}:path.startsWith('displayNames/')?{exists:()=>false}:{exists:()=>true,data:()=>({room:{uid:'member',name:'Recovered'}})},set:(path,data)=>writes.push({path,data})})});
   await assert.rejects(a.w.FB.restoreRoom('member','Blank'),/already has a room/);assert.equal(writes.length,0);
-  exists=false;await a.w.FB.restoreRoom('member','Blank');assert.equal(writes[0].data.name,'Recovered');a.close();
+  exists=false;await a.w.FB.restoreRoom('member','Blank');assert.equal(writes.find(w=>w.path==='users/member').data.name,'Recovered');a.close();
 });
 test('directory lookup normalizes email and explains missing old accounts',()=>{
   const a=app();a.api.state.directory=[{id:'creator',email:'creator@example.com'}];assert.equal(a.api.directoryMember(' CREATOR@EXAMPLE.COM ').id,'creator');assert.throws(()=>a.api.directoryMember('unknown@example.com'),/log in once/);a.close();
@@ -129,7 +130,7 @@ test('tab keyboard navigation updates focus, selection and panel visibility',()=
 });
 test('admin tabs group all controls and keep feedback outside hidden panels',()=>{
   const a=app();a.api.setup({uid:'admin',email:'owner@example.com'},true,adapter);a.doc.querySelector('#view').innerHTML='';a.api.pAdmin();
-  assert.deepEqual(tabs(a.doc).map(t=>t.textContent),['Photos & comics','Appearance','Entrance','Announcements','Members & rooms','Safety & 18+','Login history','Donations']);
+  assert.deepEqual(tabs(a.doc).map(t=>t.textContent),['Photos & comics','Appearance','Entrance','Announcements','Members & rooms','Safety & 18+','Login history','Donations','Backups']);
   for(const [tab,label] of [['Photos & comics','Upload comic pages'],['Appearance','Save site effects'],['Entrance','Change entrance password'],['Announcements','Publish announcement'],['Members & rooms','Restore / add room'],['Safety & 18+','Block email'],['Donations','Save donation info']])assert.ok(panelFor(a.doc,tab).contains(button(a.doc,label)),label);
   const status=a.doc.querySelector('[role=status]');assert.equal(status.closest('[role=tabpanel]'),null);
   button(a.doc,'Entrance').click();const input=a.doc.querySelector('[aria-label="New entrance password"]');input.value='draft';
@@ -138,8 +139,61 @@ test('admin tabs group all controls and keep feedback outside hidden panels',()=
   a.doc.querySelector('#view').innerHTML='';a.api.pAdmin();assert.equal(panelFor(a.doc,'Entrance').hidden,false);assert.equal(a.doc.querySelector('[aria-label="New entrance password"]').value,'');a.close();
 });
 test('Settings saves values from inactive tabs through the existing room write',async()=>{
-  const a=app(),writes=[];a.api.setup({uid:'member',email:'member@example.com'},false,{...adapter,collection:n=>({...adapter.collection(),doc:id=>({set:async data=>writes.push({n,id,data})})})});
+  const a=app(),writes=[];a.api.setup({uid:'member',email:'member@example.com'},false,adapter);a.w.FB={saveProfile:async (id,data)=>writes.push({n:'users',id,data})};
   a.doc.querySelector('#view').innerHTML='';a.api.pMyRoom();a.doc.querySelector('input[placeholder="Room name"]').value='New room';
   button(a.doc,'Music').click();a.doc.querySelector('input[placeholder="Song title (optional)"]').value='My song';button(a.doc,'Photos').click();button(a.doc,'Save my room').click();await new Promise(r=>setImmediate(r));
   assert.equal(writes[0].n,'users');assert.equal(writes[0].data.name,'New room');assert.equal(writes[0].data.songTitle,'My song');a.close();
+});
+test('unread DM badge counts incoming unread messages except blocked members',()=>{
+  const a=app();a.api.setup({uid:'me'},false,adapter);a.api.state.dmIn=[{id:'one',from:'friend'},{id:'two',from:'friend',read:true},{id:'three',from:'blocked'}];a.api.state.memberBlocks=[{id:'blocked'}];a.api.updateMessageBadge();assert.equal(a.doc.querySelector('#nav a[href="#dm"]').textContent,'💌 Messages (1)');a.close();
+});
+test('blocked conversation is hidden and cannot send a new message',async()=>{
+  const a=app(),writes=[];a.api.setup({uid:'me'},false,{...adapter,collection:n=>({...adapter.collection(),doc:id=>({set:async d=>writes.push(d)})})});a.api.state.users=[{id:'friend',name:'Friend'}];a.api.state.memberBlocks=[{id:'friend'}];a.api.recipient('friend');a.doc.querySelector('#view').innerHTML='';a.api.pDM();assert.match(a.doc.querySelector('#view').textContent,/Previous messages are hidden/);assert.ok(button(a.doc,'Unblock member'));a.doc.querySelector('input[placeholder="Type a private message…"]').value='hello';button(a.doc,'Send').click();await new Promise(r=>setImmediate(r));assert.equal(writes.length,0);a.close();
+});
+test('member reports contain reference and reason, never copied message content',async()=>{
+  const a=app(),writes=[];a.w.confirm=()=>true;a.api.setup({uid:'reporter'},false,{...adapter,collection:n=>({doc:id=>({set:async d=>writes.push({n,d})})})});a.doc.querySelector('#view').appendChild(a.api.memberSafety('target','message1'));a.doc.querySelector('[aria-label="Report reason"]').value='Unwanted contact';button(a.doc,'Submit report').click();await new Promise(r=>setImmediate(r));assert.equal(writes[0].n,'reports');assert.equal(writes[0].d.target,'target');assert.equal(writes[0].d.messageId,'message1');assert.equal(writes[0].d.reason,'Unwanted contact');assert.equal(writes[0].d.image,undefined);assert.equal(writes[0].d.text,undefined);a.close();
+});
+test('image selection previews locally, can be removed, and rejects oversize input',()=>{
+  const a=app(),revoked=[];a.w.URL.revokeObjectURL=url=>revoked.push(url);a.api.setup({uid:'me'},false,adapter);a.api.state.users=[{id:'friend',name:'Friend'}];a.api.recipient('friend');a.doc.querySelector('#view').innerHTML='';a.api.pDM();const input=a.doc.querySelector('input[type=file]');let files=[new a.w.File(['png'],'image.png',{type:'image/png'})];Object.defineProperty(input,'files',{get:()=>files});input.dispatchEvent(new a.w.Event('change',{bubbles:true}));assert.ok(a.doc.querySelector('img[alt="Selected image preview"]'));button(a.doc,'Remove selected image').click();assert.equal(a.doc.querySelector('img[alt="Selected image preview"]'),null);assert.deepEqual(revoked,['blob:test']);files=[{type:'image/png',size:10*1024*1024+1,name:'huge.png'}];input.dispatchEvent(new a.w.Event('change'));assert.equal(a.doc.querySelector('img[alt="Selected image preview"]'),null);assert.match(a.doc.querySelector('#view').textContent,/Choose a JPG/);a.close();
+});
+test('message send displays compression then save phases and prevents duplicate sends',async()=>{
+  const a=app();let finishCompression,finishSave,writes=0;a.api.setup({uid:'me'},false,{...adapter,collection:n=>({...adapter.collection(),doc:id=>({set:async()=>{if(n==='dms'){writes++;await new Promise(r=>finishSave=r);}}})})});a.w.FB={dmUpload:()=>new Promise(r=>finishCompression=r)};a.api.state.users=[{id:'friend',name:'Friend'}];a.api.recipient('friend');a.doc.querySelector('#view').innerHTML='';a.api.pDM();const input=a.doc.querySelector('input[type=file]');Object.defineProperty(input,'files',{value:[new a.w.File(['x'],'x.png',{type:'image/png'})]});button(a.doc,'Send').click();assert.match(a.doc.querySelector('#view').textContent,/Compressing image/);assert.equal(button(a.doc,'Send').disabled,true);finishCompression({image:'data:image/jpeg;base64,test',imageName:'x.jpg'});await new Promise(r=>setImmediate(r));assert.match(a.doc.querySelector('#view').textContent,/Saving message/);assert.equal(writes,1);finishSave();await new Promise(r=>setImmediate(r));assert.equal(button(a.doc,'Send').disabled,false);a.close();
+});
+test('room search matches display names without searching or displaying emails',()=>{
+  const a=app();a.api.setup({uid:'me',email:'me@example.com'},false,adapter);a.api.state.users=[{id:'a',name:'Golden Artist'},{id:'b',name:'Musician'}];a.doc.querySelector('#view').innerHTML='';a.api.pRooms();const search=a.doc.querySelector('input[type=search]');search.value='ARTIST';search.dispatchEvent(new a.w.Event('input'));assert.equal(a.doc.querySelectorAll('.grid .card').length,1);assert.match(a.doc.querySelector('.grid').textContent,/Golden Artist/);search.value='@example.com';search.dispatchEvent(new a.w.Event('input'));assert.match(a.doc.querySelector('.grid').textContent,/No matching rooms/);a.close();
+});
+test('expired announcements disappear while permanent and future notices remain',()=>{
+  const a=app();a.api.state.announcements=[{id:'expired',expiresAt:100},{id:'future',expiresAt:300},{id:'forever'}];assert.deepEqual(Array.from(a.api.activeAnnouncements(200),x=>x.id),['future','forever']);a.close();
+});
+test('announcement publishing rejects past expiry and writes future expiry',async()=>{
+  const a=app(),writes=[];a.api.setup({uid:'admin'},true,{...adapter,collection:n=>({...adapter.collection(),doc:id=>({set:async d=>writes.push({n,d})})})});a.doc.querySelector('#view').innerHTML='';a.api.pAdmin();a.doc.querySelector('[aria-label="Announcement text"]').value='News';const expiry=a.doc.querySelector('[aria-label="Announcement expiry"]');expiry.value='2020-01-01T00:00';button(a.doc,'Publish announcement').click();await new Promise(r=>setImmediate(r));assert.equal(writes.length,0);assert.match(a.doc.querySelector('[role=status]').textContent,/future expiry/);expiry.value='2099-01-01T00:00';button(a.doc,'Publish announcement').click();await new Promise(r=>setImmediate(r));assert.equal(writes[0].n,'announcements');assert.equal(writes[0].d.expiresAt,new Date('2099-01-01T00:00').getTime());a.close();
+});
+test('unsaved page navigation asks before leaving and cancellation retains the editor',()=>{
+  const a=app();let confirms=0;a.w.confirm=()=>{confirms++;return false;};a.api.setup({uid:'member',email:'member@example.com'},false,adapter);a.doc.querySelector('#view').innerHTML='';a.api.pMyRoom();const name=a.doc.querySelector('input[placeholder="Room name"]');name.value='Draft';name.dispatchEvent(new a.w.Event('input',{bubbles:true}));a.doc.querySelector('#nav a[href="#rooms"]').click();assert.equal(confirms,1);assert.equal(a.doc.querySelector('input[placeholder="Room name"]'),name);const e=new a.w.Event('beforeunload',{cancelable:true});a.w.dispatchEvent(e);assert.equal(e.defaultPrevented,true);a.close();
+});
+test('backup allowlist exports room content but never messages or account records',async()=>{
+  const a=app(),requested=[];sdk(a,{collection:(_,name)=>name,getDocs:async name=>{requested.push(name);return {docs:[{id:'test',data:()=>({name:'example'})}]};}});const backup=await a.w.FB.exportContent();assert.equal(backup.format,'midas-content');assert.ok(requested.includes('users'));assert.ok(requested.includes('roomArchive'));for(const name of ['dms','loginHistory','memberDirectory','reports','blockedEmails','memberBlocks','nsfw'])assert.equal(requested.includes(name),false);a.close();
+});
+test('read marking occurs only for visible active conversation and unread incoming messages',async()=>{
+  const a=app(),writes=[];let hidden=true;Object.defineProperty(a.doc,'hidden',{get:()=>hidden});a.w.history.replaceState(null,'','#dm');a.api.setup({uid:'me'},false,{...adapter,collection:n=>({doc:id=>({update:async d=>writes.push({n,id,d})})})});a.api.recipient('friend');a.api.state.dmIn=[{id:'new',from:'friend'},{id:'read',from:'friend',read:true},{id:'other',from:'other'}];a.api.markConversationRead();assert.equal(writes.length,0);hidden=false;a.api.markConversationRead();await new Promise(r=>setImmediate(r));assert.equal(writes.length,1);assert.equal(writes[0].id,'new');assert.equal(writes[0].d.read,true);a.close();
+});
+test('cancelling hash/back navigation restores the route without discarding the editor',()=>{
+  const a=app();a.w.confirm=()=>false;a.api.setup({uid:'me',email:'me@example.com'},false,adapter);a.doc.querySelector('#view').innerHTML='';a.api.pMyRoom();const input=a.doc.querySelector('input[placeholder="Room name"]');input.value='Draft';input.dispatchEvent(new a.w.Event('input',{bubbles:true}));a.w.history.replaceState(null,'','#rooms');a.api.route();assert.equal(a.w.location.hash,'#home');assert.equal(a.doc.querySelector('input[placeholder="Room name"]'),input);a.close();
+});
+test('new themes are available year-round with valid colors and distinct palettes',()=>{
+  const a=app();const keys=['midnightgold','royalvault','goldenmarble','neonmidas','artdeco'];
+  for(const key of keys){const theme=a.api.THEMES[key];assert.ok(theme);assert.equal(theme.win,undefined);const resolved=a.api.themeOf(theme);for(const field of ['--bg','--panel','--text','--gold','--gold2'])assert.match(resolved.vars[field],/^#[0-9a-f]{6}$/i);}
+  assert.equal(new Set(keys.map(k=>a.api.THEMES[k].bg)).size,5);a.api.state.settings.siteTheme='goldenmarble';a.api.applySite();assert.equal(a.doc.documentElement.style.getPropertyValue('--bg'),'#f4efe4');a.close();
+});
+test('Reduce effects toggles particles and persists visitor preference',()=>{
+  const a=app(),toggle=a.doc.querySelector('#reduce-effects');toggle.click();assert.equal(a.w.localStorage.getItem('midas-reduce-effects'),'on');assert.equal(a.doc.body.classList.contains('reduce-effects'),true);assert.equal(toggle.getAttribute('aria-pressed'),'true');toggle.click();assert.equal(a.w.localStorage.getItem('midas-reduce-effects'),'off');a.close();
+});
+test('display-name policy normalizes whitespace/case and detects existing collisions',()=>{
+  const names=require('../name-policy');assert.equal(names.key('  King   Midas  '),'king midas');assert.equal(names.valid('King Midas'),true);for(const value of ['a','x'.repeat(25),'name/path','name@example.com','👑'])assert.equal(names.valid(value),false);
+  assert.equal(names.conflicts([{id:'a',name:'Midas'},{id:'b',name:' MIDAS '}]).length,1);assert.equal(names.conflicts([{name:'Midas'},{name:'Other'}]).length,0);
+});
+test('transaction rejects a reserved name and writes profile and reservation together',async()=>{
+  const a=app(),writes=[];let claimed=true;
+  sdk(a,{doc:(_,col,id)=>col+'/'+id,runTransaction:async(_,fn)=>fn({get:async path=>path==='settings/site'?{exists:()=>true,data:()=>({namesReady:true})}:path.startsWith('displayNames/')?{exists:()=>claimed,data:()=>({uid:'other'})}:{exists:()=>false},set:(path,data)=>writes.push({path,data}),delete:()=>{}})});
+  await assert.rejects(a.w.FB.saveProfile('member',{uid:'member',name:'  Midas  '}),/taken/);assert.equal(writes.length,0);claimed=false;await a.w.FB.saveProfile('member',{uid:'member',name:'  Midas  '});assert.equal(writes[0].path,'displayNames/midas');assert.equal(writes[1].path,'users/member');assert.equal(writes[1].data.name,'Midas');a.close();
 });
