@@ -83,6 +83,14 @@ audio{width:100%;margin:12px 0}
 select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);border:1px solid var(--gold2);border-radius:8px;margin-bottom:10px;font:inherit}
 .like.on{background:linear-gradient(135deg,var(--gold2),var(--gold));color:var(--btnt,#1a1204)}
 @media (prefers-reduced-motion:reduce){.gold,.disc.spin{animation:none}}
+.editor-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 20px}
+.editor-tabs [role=tab]{background:transparent;color:var(--gold);border:1px solid var(--gold2);font-size:.8rem;padding:10px 12px;letter-spacing:.02em}
+.editor-tabs [aria-selected=true]{background:var(--btngrad,linear-gradient(135deg,var(--gold2),var(--gold)));color:var(--btnt,#1a1204)}
+.editor-tabs [role=tab]:focus-visible,.editor-panel:focus-visible{outline:2px solid var(--gold3);outline-offset:3px}
+.editor-panel[hidden]{display:none!important}
+.editor-panel>h3{margin-top:0}
+.editor-actions{border-top:1px solid var(--gold2);padding-top:16px;margin-top:18px}
+@media(max-width:480px){.editor-tabs [role=tab]{flex:1 1 42%;min-width:0}}
 #admin-access{position:fixed;top:env(safe-area-inset-top,0px);right:0;width:48px;height:48px;padding:0;border:0;background:transparent;color:transparent;z-index:9999;touch-action:manipulation}
 #admin-access:focus-visible{outline:2px solid var(--gold);outline-offset:-4px}
 .role-admin{color:#ffd24a!important;font-variant:small-caps;text-shadow:0 0 10px #e8b230;letter-spacing:.08em}
@@ -716,10 +724,38 @@ function pRooms(){
   if(!state.users.length)g.appendChild(h("p",{"class":"muted",text:"No rooms yet."}));
   view.appendChild(g);
 }
+// Keep every panel mounted so switching tabs preserves unsaved fields and file selections.
+function editorTabs(root,key,definitions){
+  var bar=h("div",{"class":"editor-tabs",role:"tablist","aria-label":key==="settings"?"Settings sections":"Admin sections"});
+  var panels={},buttons={},active=store("midas-tab-"+key)||definitions[0][0];
+  if(!definitions.some(function(d){return d[0]===active;}))active=definitions[0][0];
+  var hint=h("p",{"class":"note",text:"Choose a section below. Switching tabs keeps your unsaved changes; use the save buttons to keep them."});
+  root.appendChild(hint);root.appendChild(bar);
+  function select(id,focus){
+    active=id;store("midas-tab-"+key,id);
+    definitions.forEach(function(d){var on=d[0]===id;panels[d[0]].hidden=!on;buttons[d[0]].setAttribute("aria-selected",String(on));buttons[d[0]].tabIndex=on?0:-1;});
+    if(focus)buttons[id].focus();
+  }
+  definitions.forEach(function(d,index){
+    var prefix="editor-"+key+"-"+d[0];
+    var panel=h("section",{"class":"editor-panel",id:prefix+"-panel",role:"tabpanel","aria-labelledby":prefix+"-tab",tabindex:"0"},[h("h3",{"class":"gold",text:d[1]})]);
+    var button=h("button",{type:"button",id:prefix+"-tab",role:"tab","aria-controls":prefix+"-panel",text:d[1],onclick:function(){select(d[0],false);},onkeydown:function(e){
+      var next=null;if(e.key==="ArrowRight")next=(index+1)%definitions.length;else if(e.key==="ArrowLeft")next=(index+definitions.length-1)%definitions.length;else if(e.key==="Home")next=0;else if(e.key==="End")next=definitions.length-1;
+      if(next!==null){e.preventDefault();select(definitions[next][0],true);}
+    }});
+    panels[d[0]]=panel;buttons[d[0]]=button;bar.appendChild(button);root.appendChild(panel);
+  });
+  root.addEventListener("input",function(){root.setAttribute("data-editor-dirty","true");});
+  root.addEventListener("change",function(){root.setAttribute("data-editor-dirty","true");});
+  select(active,false);
+  return {panel:function(id){return panels[id];}};
+}
 function pMyRoom(){
   if(!me){needLogin();return;}
   var p=profile(me.uid)||{};
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"⚙️ Settings"}),h("p",{"class":"note",text:"Signed in as "+me.email+". Everything here only changes your own account and your own room."}),h("a",{"class":"btn",href:"#room-"+me.uid,text:"View my room"}),h("span",{text:"  "}),h("button",{text:"Log out",onclick:function(){FB.logout();}})]);
+  var page=c,tabs=editorTabs(page,"settings",[["profile","Profile"],["appearance","Appearance"],["music","Music"],["photos","Photos"],["friends","Friends & status"]]);
+  c=tabs.panel("profile");
   var nm=h("input",{maxlength:"40",placeholder:"Room name"});nm.value=p.name||"";
   var st=h("textarea",{rows:"8",maxlength:"4000",placeholder:"Write your own story here…"});st.value=p.story||"";
   var TE=themeEditor({accent:p.accent,bg:p.bg,panel:p.panel,tx:p.text,border:p.border,btn:p.btn,gs:p.gs,gc:p.gc,ps:p.ps,pc:p.pc,rh:p.rh,cur:p.cur,cc:p.cc,tap:p.tap,tc:p.tc},isAdmin);
@@ -732,6 +768,7 @@ function pMyRoom(){
   var avPrev=h("img",{"class":"av",src:avData,alt:"",style:"width:84px;height:84px;"+(avData?"":"display:none")}),avIn=h("input",{type:"file",accept:"image/*"});
   avIn.onchange=function(){if(!avIn.files[0]||!assets)return;assets.avatar(avIn.files[0]).then(function(u){if(u.length>=20000)throw new Error("Try a simpler profile picture.");avData=u;avPrev.src=u;avPrev.style.display="block";msg.textContent="Profile picture ready. Press Save my room.";}).catch(function(e){msg.textContent=(e&&e.message)||"Could not read that picture";});};
   c.appendChild(h("label",{text:"Profile picture"}));c.appendChild(h("div",{style:"display:flex;gap:12px;align-items:center;flex-wrap:wrap"},[avPrev,avIn]));
+  c=tabs.panel("photos");
   c.appendChild(h("label",{text:"Cover banner (wide picture at the top of your room)"}));
   var bIn=h("input",{type:"file",accept:"image/*"});c.appendChild(bIn);
   c.appendChild(h("button",{type:"button",text:"Upload banner",onclick:function(){
@@ -746,6 +783,7 @@ function pMyRoom(){
   var tg=h("input",{placeholder:"Short tagline (like a status)",maxlength:"80"});tg.value=p.tag||"";
   var ab=h("textarea",{rows:"5",maxlength:"1000",placeholder:"About me…"});ab.value=p.about||"";
   var tgs=h("input",{placeholder:"Interests, separated by commas (music, art, games)",maxlength:"200"});tgs.value=(p.tags||[]).join(", ");
+  c=tabs.panel("profile");
   c.appendChild(h("label",{text:"Mood"}));c.appendChild(mo);
   c.appendChild(h("label",{text:"Tagline"}));c.appendChild(tg);
   c.appendChild(h("label",{text:"About me"}));c.appendChild(ab);
@@ -753,6 +791,7 @@ function pMyRoom(){
   c.appendChild(h("label",{text:"My links (up to 5, must start with https://)"}));
   var lkRows=[];
   for(var li=0;li<5;li++){var lt=h("input",{placeholder:"Link name",maxlength:"30"}),lu=h("input",{placeholder:"https://…",maxlength:"200"}),ex=(p.links||[])[li];if(ex){lt.value=ex.t||"";lu.value=ex.u||"";}lkRows.push([lt,lu]);c.appendChild(lt);c.appendChild(lu);}
+  c=tabs.panel("friends");
   c.appendChild(h("label",{text:"Top friends (pick up to 8)"}));
   var friendsNow=acceptedFriends(),topBoxes=[];
   if(!friendsNow.length)c.appendChild(h("p",{"class":"note",text:"Add some friends first, then pick your top friends here."}));
@@ -766,6 +805,7 @@ function pMyRoom(){
   [["online","🟢 Online"],["away","🟡 Away"],["dnd","🔴 Do not disturb"],["invisible","⚫ Appear offline"]].forEach(function(o){stSel2.appendChild(h("option",{value:o[0],text:o[1]}));});
   stSel2.value=myStatus;stSel2.onchange=function(){myStatus=stSel2.value;lstore("midas-st",myStatus);beat();};
   c.appendChild(stSel2);
+  c=tabs.panel("appearance");
   c.appendChild(h("p",{"class":"note",text:"Seasonal themes only show up here while their season is on. Your colors stay saved after the season ends."}));
   c.appendChild(TE.el);
   c.appendChild(h("label",{text:"Room background picture"}));
@@ -795,12 +835,13 @@ function pMyRoom(){
     TE.set(o);if(typeof o.css==="string")cssTa.value=o.css.slice(0,4000);
     msg.textContent="Theme code loaded. Press Save my room to keep it.";codeIn.value="";
   }}));
+  c=tabs.panel("music");
   c.appendChild(h("label",{text:"My song (plays on loop in my room)"}));c.appendChild(sg);c.appendChild(sgt);
   c.appendChild(h("p",{"class":"note",text:"Songs can't be uploaded here. Paste a direct https link to an audio file."}));
   c.appendChild(h("label",{text:"🎵 My music bot playlist (up to 6 more songs, https links)"}));
   var plRows=[];
   for(var pi=0;pi<6;pi++){var pt=h("input",{placeholder:"Song title",maxlength:"60"}),pu=h("input",{placeholder:"https://… link to a song",maxlength:"300"}),pe=(p.list||[])[pi];if(pe){pt.value=pe.t||"";pu.value=pe.u||"";}plRows.push([pt,pu]);c.appendChild(pt);c.appendChild(pu);}
-  c.appendChild(h("button",{text:"Save my room",onclick:function(){
+  var saveRoom=h("button",{text:"Save my room",onclick:function(){
     if(sg.value&&!isHttps(sg.value.trim())){msg.textContent="The song link must start with https://";return;}
     db.collection("users").doc(me.uid).set({uid:me.uid,name:nm.value.trim().slice(0,40)||"Golden Guest",story:st.value,accent:TE.get().accent,bg:TE.get().bg,panel:TE.get().panel,text:TE.get().tx,border:TE.get().border,btn:TE.get().btn,rh:TE.get().rh,gs:TE.get().gs,gc:TE.get().gc,ps:TE.get().ps,pc:TE.get().pc,
       song:sg.value.trim(),songTitle:sgt.value.trim(),av:avData,mood:mo.value,tag:tg.value.trim().slice(0,80),about:ab.value.slice(0,1000),
@@ -808,7 +849,7 @@ function pMyRoom(){
       links:lkRows.map(function(r){return {t:r[0].value.trim().slice(0,30)||"Link",u:r[1].value.trim()};}).filter(function(x){return isHttps(x.u);}).slice(0,5),
       list:plRows.map(function(r){return {t:r[0].value.trim().slice(0,60)||"Track",u:r[1].value.trim()};}).filter(function(x){return isHttps(x.u);}).slice(0,6),
       top:topPick(),cur:TE.get().cur,cc:TE.get().cc,tap:TE.get().tap,tc:TE.get().tc,css:cssTa.value.slice(0,4000),ts:p.ts||Date.now()}).then(function(){msg.textContent="Saved!";}).catch(function(e){msg.textContent="Could not save: "+((e&&e.message)||"error");});
-  }}));
+  }});
   c.appendChild(h("label",{text:"My music (plays on loop in my room)"}));
   var curT=null,tinfo=h("p",{"class":"note",text:"No uploaded song yet."}),mf=h("input",{type:"file",accept:"audio/*"}),mt=h("input",{placeholder:"Song title",maxlength:"60"});
   c.appendChild(tinfo);c.appendChild(mf);c.appendChild(mt);
@@ -834,6 +875,7 @@ function pMyRoom(){
     db.collection("tracks").doc(me.uid).delete();msg.textContent="Song removed.";
   }}));
   c.appendChild(h("p",{"class":"note",text:"Uploads can be up to 3 MB (about 3 minutes of MP3). For bigger songs paste a link above."}));
+  c=tabs.panel("photos");
   c.appendChild(h("label",{text:"My photos"}));
   var fi=h("input",{type:"file",accept:"image/*",multiple:"multiple"}),cap=h("input",{placeholder:"Caption (optional)",maxlength:"100"}),pg=h("div",{"class":"grid",style:"margin-top:14px"});
   c.appendChild(fi);c.appendChild(cap);
@@ -847,7 +889,10 @@ function pMyRoom(){
     }
     fi.value="";cap.value="";msg.textContent="Photos added!";
   }}));
-  c.appendChild(msg);c.appendChild(pg);view.appendChild(c);
+  c.appendChild(pg);
+  msg.setAttribute("role","status");msg.setAttribute("aria-live","polite");
+  page.appendChild(h("div",{"class":"editor-actions"},[saveRoom,h("p",{"class":"note",text:"Save my room saves profile, appearance, music links and top friends across all tabs. Upload buttons save their items separately."}),msg]));
+  view.appendChild(page);
   if(db){
     var u1=db.collection("uphotos").onSnapshot(function(s){photoGrid(pg,snap(s),true);},{where:["owner","==",me.uid]});
     var u2=db.doc("tracks/"+me.uid).onSnapshot(function(s){curT=s.exists?s.data():null;tinfo.textContent=curT?"Current song: "+curT.title:"No uploaded song yet.";});
@@ -1235,7 +1280,7 @@ function likeBtn(p){
     (mine?r.delete():r.set({pid:p.id,vid:me,ts:Date.now()})).catch(function(){});
   }});
 }
-function refresh(){var t=document.activeElement&&document.activeElement.tagName;if(t==="INPUT"||t==="TEXTAREA"||document.querySelector("#view details[open]")||Array.from(document.querySelectorAll("#view input[type=file]")).some(function(f){return f.files.length>0;}))return;if(stTab==="new"&&(location.hash||"")==="#story")return;route();}
+function refresh(){if(document.querySelector("[data-editor-dirty=true]"))return;var t=document.activeElement&&document.activeElement.tagName;if(t==="INPUT"||t==="TEXTAREA"||document.querySelector("#view details[open]")||Array.from(document.querySelectorAll("#view input[type=file]")).some(function(f){return f.files.length>0;}))return;if(stTab==="new"&&(location.hash||"")==="#story")return;route();}
 
 /* ---------- live chat ---------- */
 var chatBox=null,lastSend=0;
@@ -1532,7 +1577,9 @@ function pAdmin(){
   }
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Admin"}),
     h("button",{"class":"del",text:"Log out",onclick:function(){FB.logout();}})]);
-  var msg=h("div",{"class":"note"});
+  var page=c,tabs=editorTabs(page,"admin",[["content","Photos & comics"],["appearance","Appearance"],["entrance","Entrance"],["announcements","Announcements"],["members","Members & rooms"],["safety","Safety & 18+"],["logins","Login history"],["donations","Donations"]]);
+  c=tabs.panel("content");
+  var msg=h("div",{"class":"note",role:"status","aria-live":"polite"});
   function say(t){msg.textContent=t;}
 
   c.appendChild(h("label",{text:"Add photos"}));
@@ -1565,6 +1612,7 @@ function pAdmin(){
     cf.value="";say("Done! Comic pages added.");
   }}));
 
+  c=tabs.panel("donations");
   c.appendChild(h("label",{text:"Donation link (https://…)"}));
   var dl=h("input",{placeholder:"https://your-donation-page"});dl.value=state.settings.donate||"";
   var dm=h("input",{placeholder:"Message above the donate button"});dm.value=state.settings.donmsg||"";
@@ -1573,6 +1621,7 @@ function pAdmin(){
     if(dl.value&&!/^https:\/\//i.test(dl.value)){say("The link must start with https://");return;}
     saveSettings({donate:dl.value.trim(),donmsg:dm.value}).then(function(){say("Saved.");}).catch(function(e){say("Could not save: "+(e&&e.message||"error"));});
   }}));
+  c=tabs.panel("appearance");
   c.appendChild(h("label",{text:"🖼️ Corner pictures (the picture in the upper left)"}));
   var cpf=h("input",{type:"file",accept:"image/*"}),cpn=h("input",{placeholder:"Name for this picture",maxlength:"40"});
   c.appendChild(cpf);c.appendChild(cpn);
@@ -1630,6 +1679,7 @@ function pAdmin(){
   }}));
   var sw=Object.keys(THEMES).filter(function(k){return THEMES[k].win;}).map(function(k){return THEMES[k].name+" "+THEMES[k].win.map(function(w){return w[0]+" to "+w[1];}).join(", ");}).join("  |  ");
   c.appendChild(h("p",{"class":"note",text:"Automatic seasons (month-day): "+sw}));
+  c=tabs.panel("safety");
   c.appendChild(h("label",{text:"18+ age verification link (from your verification provider, must start with https://)"}));
   var al2=h("input",{placeholder:"https://…"});al2.value=(state.age&&state.age.link)||"";
   c.appendChild(al2);
@@ -1658,8 +1708,8 @@ function pAdmin(){
   });
   if(!state.users.length)c.appendChild(h("p",{"class":"note",text:"No members yet."}));
   c.appendChild(h("p",{"class":"note",text:"Delete buttons show on the Gallery, Comic and comment areas while you are logged in. Songs are set in config.js."}));
-  adminCommunity(c,say);
-  c.appendChild(msg);view.appendChild(c);
+  adminCommunity(tabs,say);
+  page.appendChild(msg);view.appendChild(page);
 }
 
 function pCreator(id){
@@ -1701,7 +1751,8 @@ function directoryMember(email){
   return row;
 }
 function adminEmailFor(uid){var row=state.directory.find(function(x){return x.id===uid;});return row?row.email:"Email available after next login; restore by signup email below.";}
-function adminCommunity(c,say){
+function adminCommunity(tabs,say){
+  var c=tabs.panel("entrance");
   c.appendChild(h("h3",{"class":"gold",text:"Entrance settings"}));
   c.appendChild(h("p",{"class":"note",text:"The entrance is a visitor courtesy screen, not protection for public files or creator pages. Admin access always requires your account login."}));
   var entrance=h("input",{type:"password",minlength:"8",maxlength:"128",autocomplete:"new-password",placeholder:"New main entrance password","aria-label":"New entrance password"});c.appendChild(entrance);
@@ -1709,10 +1760,12 @@ function adminCommunity(c,say){
   var background=h("input",{type:"file",accept:"image/*","aria-label":"Entrance background"});c.appendChild(h("label",{text:"Entrance background"}));c.appendChild(background);
   c.appendChild(h("button",{text:"Save entrance background",onclick:async function(){try{if(!background.files[0])throw new Error("Choose an image first.");await saveSettings({entranceBackground:(await assets.upload(background.files[0])).url});background.value="";applySite();say("Entrance background saved.");}catch(e){say(e.message);}}}));
   c.appendChild(h("button",{"class":"del",text:"Remove entrance background",onclick:function(){saveSettings({entranceBackground:""}).then(function(){applySite();say("Background removed.");}).catch(function(e){say(e.message);});}}));
+  c=tabs.panel("announcements");
   c.appendChild(h("h3",{"class":"gold",text:"📣 Announcements"}));
   var announcement=h("textarea",{rows:"3",maxlength:"1000",placeholder:"Announcement for all visitors","aria-label":"Announcement text"});c.appendChild(announcement);
   c.appendChild(h("button",{text:"Publish announcement",onclick:async function(){if(!announcement.value.trim())return;try{await db.collection("announcements").doc(crypto.randomUUID()).set({text:announcement.value.trim(),ts:Date.now()});announcement.value="";say("Announcement published.");}catch(e){say(e.message);}}}));
   state.announcements.forEach(function(a){c.appendChild(h("div",{"class":"cm"},[h("p",{text:a.text}),h("button",{"class":"del",text:"Remove announcement",onclick:function(){db.collection("announcements").doc(a.id).delete().catch(function(e){say(e.message);});}})]));});
+  c=tabs.panel("members");
   c.appendChild(h("h3",{"class":"gold",text:"Member name styles"}));
   var styleEmail=h("input",{type:"email",placeholder:"Member signup email","aria-label":"Name style member email"}),styleRole=h("select",{"aria-label":"Member name style"},[h("option",{value:"creator",text:"Creator"}),h("option",{value:"sponsor",text:"Sponsor"}),h("option",{value:"member",text:"Regular member"})]);c.appendChild(styleEmail);c.appendChild(styleRole);
   c.appendChild(h("button",{text:"Save name style",onclick:async function(){try{var member=directoryMember(styleEmail.value);if(member.email===(window.SITE||{}).adminEmail)throw new Error("The admin keeps the admin style.");var roleDoc=db.collection("siteRoles").doc(member.id);if(styleRole.value==="member")await roleDoc.delete();else await roleDoc.set({role:styleRole.value});say("Name style saved. Styles do not grant editing or admin permissions.");}catch(e){say(e.message);}}}));
@@ -1721,11 +1774,13 @@ function adminCommunity(c,say){
   c.appendChild(h("button",{text:"Restore / add room",onclick:async function(){try{var member=directoryMember(email.value);await FB.restoreRoom(member.id,member.email.split("@")[0]);say("Room restored, or a new empty room created if no backup existed. Existing rooms are never overwritten.");}catch(e){say(e.message);}}}));
   c.appendChild(h("p",{"class":"note",text:"Rooms deleted with the button below are archived before removal. Older deletions without a backup can only be recreated; old content cannot be recovered."}));
   state.users.forEach(function(u){c.appendChild(h("div",{"class":"cm"},[h("b",{text:u.name}),h("small",{text:adminEmailFor(u.id)}),h("button",{"class":"del",text:"Archive and delete room",onclick:async function(){if(!confirm("Archive and remove this room? The account and media will remain."))return;try{await FB.archiveRoom(u.id);say("Room archived and removed.");}catch(e){say(e.message);}}})]));});
+  c=tabs.panel("safety");
   c.appendChild(h("h3",{"class":"gold",text:"Email member-access blacklist"}));
   c.appendChild(h("p",{"class":"note",text:"Blocks signed-in access to member data, not Firebase account login or public pages. IP blocks are managed separately in Vercel Firewall, not here."}));
   var blockedEmail=h("input",{type:"email",placeholder:"Email to block","aria-label":"Email to block"});c.appendChild(blockedEmail);
   c.appendChild(h("button",{text:"Block email",onclick:async function(){try{var value=blockedEmail.value.trim().toLowerCase();if(!/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(value)||value.length>254)throw new Error("Enter a valid email.");if(value===(window.SITE||{}).adminEmail)throw new Error("The admin cannot be blocked.");await db.collection("blockedEmails").doc(value).set({value:value,ts:Date.now()});blockedEmail.value="";say("Member data blocked for this email.");}catch(e){say(e.message);}}}));
   state.blockedEmails.forEach(function(b){c.appendChild(h("div",{"class":"cm"},[h("span",{text:b.value+" "}),h("button",{"class":"del",text:"Unblock",onclick:async function(){try{await db.collection("blockedEmails").doc(b.id).delete();say("Unblocked.");}catch(e){say(e.message);}}})]));});
+  c=tabs.panel("logins");
   c.appendChild(h("h3",{"class":"gold",text:"Recent observed logins (latest 100)"}));
   c.appendChild(h("p",{"class":"note",text:"Admin-only record of sessions observed by this website, not a complete security audit. No IP addresses are collected. Older logins are unavailable."}));
   state.loginHistory.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(entry){c.appendChild(h("div",{"class":"cm"},[h("b",{text:entry.email}),h("small",{text:new Date(entry.authTime*1000).toLocaleString()}),h("p",{text:"Observed: "+new Date(entry.ts).toLocaleString()})]));});
@@ -1766,7 +1821,7 @@ function loaded(){
   db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});entranceReady=true;applySite();applyCorner();refresh();});
   db.collection("photos").onSnapshot(function(s){state.photos=snap(s);refresh();});
   db.collection("comics").onSnapshot(function(s){state.comics=snap(s);refresh();});
-  db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")route();});
+  db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")refresh();});
   db.collection("likes").onSnapshot(function(s){state.likes=snap(s);if((location.hash||"#home")==="#home")refresh();});
   db.collection("chat").onSnapshot(function(s){state.chat=snap(s);renderChat();},{limit:100});
   db.collection("stories").onSnapshot(function(s){state.stories=snap(s);if((location.hash||"")==="#story")refresh();});

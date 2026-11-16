@@ -16,7 +16,7 @@ function app() {
   w.HTMLMediaElement.prototype.play = () => Promise.resolve();w.HTMLMediaElement.prototype.pause = () => {};w.HTMLMediaElement.prototype.load = () => {};
   w.URL.createObjectURL = () => 'blob:test';w.URL.revokeObjectURL = () => {};
   w.eval(classic.replace('\nroute();\n})();', `
-    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,
+    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,
       entranceReady:function(){entranceReady=true;},
       setup:function(user,admin,adapter){me=user;isAdmin=admin;db=adapter;assets={upload:async function(){return {url:'data:image/jpeg;base64,test'};}};},
       recipient:function(uid){dmWith=uid;},roleClass:roleClass};
@@ -104,4 +104,42 @@ test('directory lookup normalizes email and explains missing old accounts',()=>{
 test('creator password reset is emailed to the creator, never set by admin',async()=>{
   const a=app(),emails=[];a.api.setup({uid:'admin'},true,adapter);a.api.state.directory=[{id:'creator',email:'creator@example.com'}];a.api.state.sponsors=[{id:'page',kind:'creator',owner:'creator',name:'Artist'}];a.w.FB={reset:async email=>emails.push(email)};
   a.doc.querySelector('#view').innerHTML='';a.api.pCreator('page');button(a.doc,'Send creator password reset email').click();await new Promise(r=>setImmediate(r));assert.equal(emails[0],'creator@example.com');assert.equal(a.doc.querySelector('input[autocomplete="new-password"]'),null);a.close();
+});
+function tabs(doc){return [...doc.querySelectorAll('[role=tab]')];}
+function panelFor(doc,label){const tab=tabs(doc).find(t=>t.textContent===label);return doc.getElementById(tab.getAttribute('aria-controls'));}
+test('Settings groups controls into five tabs and preserves drafts when switching',()=>{
+  const a=app();a.api.setup({uid:'member',email:'member@example.com'},false,adapter);a.doc.querySelector('#view').innerHTML='';a.api.pMyRoom();
+  assert.deepEqual(tabs(a.doc).map(t=>t.textContent),['Profile','Appearance','Music','Photos','Friends & status']);
+  const profile=panelFor(a.doc,'Profile'),music=panelFor(a.doc,'Music'),photos=panelFor(a.doc,'Photos');
+  const name=profile.querySelector('input[placeholder="Room name"]');name.value='My unsaved name';name.dispatchEvent(new a.w.Event('input',{bubbles:true}));
+  assert.equal(profile.hidden,false);assert.equal(music.hidden,true);
+  button(a.doc,'Music').click();assert.equal(profile.hidden,true);assert.equal(music.hidden,false);
+  assert.ok(music.contains(button(a.doc,'Upload song')));assert.ok(photos.contains(button(a.doc,'Upload banner')));assert.ok(photos.contains(button(a.doc,'Upload photos')));
+  button(a.doc,'Profile').click();assert.equal(profile.querySelector('input[placeholder="Room name"]'),name);assert.equal(name.value,'My unsaved name');
+  a.api.refresh();assert.equal(a.doc.querySelector('input[placeholder="Room name"]'),name);
+  const save=button(a.doc,'Save my room');assert.ok(save);assert.equal(save.closest('[role=tabpanel]'),null);a.close();
+});
+test('tab keyboard navigation updates focus, selection and panel visibility',()=>{
+  const a=app();a.api.setup({uid:'member',email:'member@example.com'},false,adapter);a.doc.querySelector('#view').innerHTML='';a.api.pMyRoom();
+  const first=tabs(a.doc)[0];first.focus();first.dispatchEvent(new a.w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+  assert.equal(a.doc.activeElement.textContent,'Appearance');assert.equal(a.doc.activeElement.getAttribute('aria-selected'),'true');assert.equal(first.tabIndex,-1);
+  a.doc.activeElement.dispatchEvent(new a.w.KeyboardEvent('keydown',{key:'End',bubbles:true}));assert.equal(a.doc.activeElement.textContent,'Friends & status');
+  a.doc.activeElement.dispatchEvent(new a.w.KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert.equal(a.doc.activeElement,first);
+  assert.equal([...a.doc.querySelectorAll('[role=tabpanel]')].filter(p=>!p.hidden).length,1);a.close();
+});
+test('admin tabs group all controls and keep feedback outside hidden panels',()=>{
+  const a=app();a.api.setup({uid:'admin',email:'owner@example.com'},true,adapter);a.doc.querySelector('#view').innerHTML='';a.api.pAdmin();
+  assert.deepEqual(tabs(a.doc).map(t=>t.textContent),['Photos & comics','Appearance','Entrance','Announcements','Members & rooms','Safety & 18+','Login history','Donations']);
+  for(const [tab,label] of [['Photos & comics','Upload comic pages'],['Appearance','Save site effects'],['Entrance','Change entrance password'],['Announcements','Publish announcement'],['Members & rooms','Restore / add room'],['Safety & 18+','Block email'],['Donations','Save donation info']])assert.ok(panelFor(a.doc,tab).contains(button(a.doc,label)),label);
+  const status=a.doc.querySelector('[role=status]');assert.equal(status.closest('[role=tabpanel]'),null);
+  button(a.doc,'Entrance').click();const input=a.doc.querySelector('[aria-label="New entrance password"]');input.value='draft';
+  button(a.doc,'Donations').click();button(a.doc,'Entrance').click();assert.equal(input.value,'draft');
+  // Selected section persists when the page is rebuilt without carrying unsaved data over.
+  a.doc.querySelector('#view').innerHTML='';a.api.pAdmin();assert.equal(panelFor(a.doc,'Entrance').hidden,false);assert.equal(a.doc.querySelector('[aria-label="New entrance password"]').value,'');a.close();
+});
+test('Settings saves values from inactive tabs through the existing room write',async()=>{
+  const a=app(),writes=[];a.api.setup({uid:'member',email:'member@example.com'},false,{...adapter,collection:n=>({...adapter.collection(),doc:id=>({set:async data=>writes.push({n,id,data})})})});
+  a.doc.querySelector('#view').innerHTML='';a.api.pMyRoom();a.doc.querySelector('input[placeholder="Room name"]').value='New room';
+  button(a.doc,'Music').click();a.doc.querySelector('input[placeholder="Song title (optional)"]').value='My song';button(a.doc,'Photos').click();button(a.doc,'Save my room').click();await new Promise(r=>setImmediate(r));
+  assert.equal(writes[0].n,'users');assert.equal(writes[0].data.name,'New room');assert.equal(writes[0].data.songTitle,'My song');a.close();
 });
