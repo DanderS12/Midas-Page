@@ -1,0 +1,4 @@
+tests/
+firebase.json
+firestore.rules
+SETUP.md

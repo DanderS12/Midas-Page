@@ -11,7 +11,6 @@ window.SITE = {
   },
 
   // 2) The email of the admin user you create in Firebase Authentication.
-  //    The admin password (Dander_Midas) is set in Firebase and is NOT stored in this site.
   adminEmail: "david.d.rodriguez0804@gmail.com",
 
   // Optional: a relay (TURN) server for the voice room, for networks that block direct connections.
