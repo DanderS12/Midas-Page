@@ -1,0 +1,23 @@
+{
+  "name": "primary",
+  "version": "1.0.0",
+  "description": "midas",
+  "main": "config.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DanderS12/Midas-Page.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DanderS12/Midas-Page/issues"
+  },
+  "homepage": "https://github.com/DanderS12/Midas-Page#readme",
+  "dependencies": {
+    "@vercel/speed-insights": "^2.1.0"
+  }
+}
