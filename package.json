@@ -1,0 +1,11 @@
+{
+  "name": "midas-room",
+  "version": "1.0.0",
+  "description": "The Midas Room - A private gallery of golden moments",
+  "scripts": {
+    "test": "echo \"No tests configured\" && exit 0"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^1.1.1"
+  }
+}
