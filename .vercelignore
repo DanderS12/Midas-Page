@@ -1,0 +1,7 @@
+functions/
+tests/
+firebase.json
+firestore.rules
+storage.rules
+storage.cors.json
+SETUP.md

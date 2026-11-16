@@ -1,0 +1,13 @@
+{
+  "name": "midas-room",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/backend.test.js tests/frontend.test.js",
+    "test:rules": "node --test tests/rules.test.js"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.3.0",
+    "jsdom": "^27.0.0"
+  }
+}
