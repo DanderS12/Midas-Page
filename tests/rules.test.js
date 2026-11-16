@@ -114,3 +114,11 @@ test('legacy profile edits preserve their name without forcing an automatic rena
   await seed();await assertSucceeds(updateDoc(doc(user('creator').firestore(),'users/creator'),{about:'My new bio'}));
   await assertFails(updateDoc(doc(user('creator').firestore(),'users/creator'),{name:'Unclaimed'}));
 });
+test('assigned creator may customize website button but cannot change page ownership',async()=>{
+  await seed();const page=doc(user('creator').firestore(),'sponsors/page');
+  await assertSucceeds(updateDoc(page,{link:'https://example.com',buttonLabel:'My shop',buttonBg:'#112233',buttonColor:'#ffffff',buttonShape:'pill'}));
+  await assertFails(updateDoc(page,{buttonBg:'red;position:fixed'}));
+  await assertFails(updateDoc(page,{buttonShape:'script'}));
+  await assertFails(updateDoc(page,{owner:'stranger'}));
+  await assertFails(updateDoc(doc(user('stranger').firestore(),'sponsors/page'),{buttonLabel:'Hijack'}));
+});

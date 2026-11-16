@@ -17,7 +17,7 @@ function app() {
   w.HTMLMediaElement.prototype.play = () => Promise.resolve();w.HTMLMediaElement.prototype.pause = () => {};w.HTMLMediaElement.prototype.load = () => {};
   w.URL.createObjectURL = () => 'blob:test';w.URL.revokeObjectURL = () => {};
   w.eval(classic.replace('\nroute();\n})();', `
-    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,pRooms:pRooms,memberSafety:memberSafety,renderDM:renderDM,markConversationRead:markConversationRead,updateMessageBadge:updateMessageBadge,activeAnnouncements:activeAnnouncements,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,themeOf:themeOf,THEMES:THEMES,applySite:applySite,
+    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,pAlerts:pAlerts,pCassie:pCassie,groupedAlerts:groupedAlerts,creatorLink:creatorLink,sponsorBanner:sponsorBanner,pRooms:pRooms,memberSafety:memberSafety,renderDM:renderDM,markConversationRead:markConversationRead,updateMessageBadge:updateMessageBadge,activeAnnouncements:activeAnnouncements,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,themeOf:themeOf,THEMES:THEMES,applySite:applySite,
       entranceReady:function(){entranceReady=true;},
       setup:function(user,admin,adapter){me=user;isAdmin=admin;db=adapter;assets={upload:async function(){return {url:'data:image/jpeg;base64,test'};}};},
       recipient:function(uid){dmWith=uid;},roleClass:roleClass};
@@ -196,4 +196,29 @@ test('transaction rejects a reserved name and writes profile and reservation tog
   const a=app(),writes=[];let claimed=true;
   sdk(a,{doc:(_,col,id)=>col+'/'+id,runTransaction:async(_,fn)=>fn({get:async path=>path==='settings/site'?{exists:()=>true,data:()=>({namesReady:true})}:path.startsWith('displayNames/')?{exists:()=>claimed,data:()=>({uid:'other'})}:{exists:()=>false},set:(path,data)=>writes.push({path,data}),delete:()=>{}})});
   await assert.rejects(a.w.FB.saveProfile('member',{uid:'member',name:'  Midas  '}),/taken/);assert.equal(writes.length,0);claimed=false;await a.w.FB.saveProfile('member',{uid:'member',name:'  Midas  '});assert.equal(writes[0].path,'displayNames/midas');assert.equal(writes[1].path,'users/member');assert.equal(writes[1].data.name,'Midas');a.close();
+});
+test('DM alerts group by sender, count unread messages and open marks all grouped IDs',async()=>{
+  const a=app(),updates=[];a.api.setup({uid:'me'},false,{...adapter,collection:n=>({...adapter.collection(),doc:id=>({update:async d=>updates.push({id,d})})})});a.api.state.notifs=[{id:'a',type:'dm',from:'jay',fromName:'Jay',ts:1,read:false},{id:'b',type:'dm',from:'jay',fromName:'Jay',ts:2,read:false},{id:'c',type:'dm',from:'jay',fromName:'Jay',ts:3,read:true}];
+  assert.equal(a.api.groupedAlerts().length,1);assert.equal(a.api.groupedAlerts()[0].count,2);a.doc.querySelector('#view').innerHTML='';a.api.pAlerts();assert.equal(a.doc.querySelectorAll('#view .cm').length,1);assert.match(a.doc.querySelector('#view').textContent,/2 new messages/);button(a.doc,'Open').click();await new Promise(r=>setImmediate(r));assert.deepEqual(updates.map(x=>x.id).sort(),['a','b','c']);a.close();
+});
+test('long conversations render a bounded window and build safety forms only on demand',()=>{
+  const a=app();a.api.setup({uid:'me'},false,adapter);a.api.state.users=[{id:'jay',name:'Jay'}];a.api.state.dmIn=Array.from({length:500},(_,i)=>({id:String(i),from:'jay',to:'me',text:'Hello '+i,ts:i,read:true}));a.api.recipient('jay');a.doc.querySelector('#view').innerHTML='';a.api.pDM();assert.equal(a.doc.querySelectorAll('#view .cm').length,80);assert.equal(a.doc.querySelectorAll('.cm textarea').length,0);const first=a.doc.querySelector('.cm');a.api.renderDM();assert.equal(a.doc.querySelector('.cm'),first);button(a.doc,'Load older messages').click();assert.equal(a.doc.querySelectorAll('#view .cm').length,160);a.close();
+});
+test('member safety controls start closed behind an options summary',()=>{
+  const a=app();a.api.setup({uid:'me'},false,adapter);const safety=a.api.memberSafety('jay');assert.equal(safety.tagName,'DETAILS');assert.equal(safety.open,false);assert.match(safety.querySelector('summary').textContent,/Member options/);assert.ok(safety.querySelector('[data-block-target]'));a.close();
+});
+test('creator external button allows only HTTPS and sanitizes all visual values',()=>{
+  const a=app();assert.equal(a.api.creatorLink({link:'javascript:alert(1)'}),null);const good=a.api.creatorLink({link:'https://example.com',buttonLabel:'Shop',buttonBg:'#112233',buttonColor:'#ffffff',buttonShape:'pill'});assert.equal(good.textContent,'Shop');assert.match(good.getAttribute('style'),/border-radius:999px/);assert.equal(good.rel,'noopener noreferrer');const bad=a.api.creatorLink({link:'https://example.com',buttonBg:'red;position:fixed',buttonShape:'bad'});assert.doesNotMatch(bad.getAttribute('style'),/position/);assert.match(bad.getAttribute('style'),/border-radius:10px/);a.close();
+});
+test('creator button customization is saved with the existing owner edit path',async()=>{
+  const a=app(),updates=[];a.api.setup({uid:'artist',email:'artist@example.com'},false,{...adapter,collection:n=>({doc:id=>({update:async data=>updates.push({n,id,data})})})});a.api.state.sponsors=[{id:'page',kind:'creator',owner:'artist',name:'Artist',blurb:'Bio',link:'',img:''}];a.doc.querySelector('#view').innerHTML='';a.api.pCreator('page');a.doc.querySelector('[aria-label="Creator link"]').value='https://example.com';a.doc.querySelector('[aria-label="Website button label"]').value='My shop';a.doc.querySelector('[aria-label="Website button shape"]').value='pill';button(a.doc,'Save creator page').click();await new Promise(r=>setImmediate(r));assert.equal(updates[0].data.buttonLabel,'My shop');assert.equal(updates[0].data.buttonShape,'pill');a.close();
+});
+test('sponsor pin stays until removed and supports safe top/bottom placement',async()=>{
+  const a=app();a.api.state.settings.sponsorPin={text:'Sponsor news',position:'bottom',link:'https://example.com',label:'Sponsor'};assert.equal(a.api.sponsorBanner('top'),null);assert.match(a.api.sponsorBanner('bottom').textContent,/Sponsor news/);a.api.state.settings.sponsorPin=null;assert.equal(a.api.sponsorBanner('bottom'),null);a.close();
+});
+test('Cassie Lounge renders a distinct landing area linked to existing chat',()=>{
+  const a=app();a.doc.querySelector('#view').innerHTML='';a.api.pCassie();assert.ok(a.doc.querySelector('.cassie-lounge'));assert.equal(a.doc.querySelectorAll('.lounge-web').length,2);assert.equal(a.doc.querySelector('.cassie-lounge a').hash,'#chat');assert.ok(a.doc.querySelector('#nav a[href="#cassie"]'));a.close();
+});
+test('music effects settings persist per browser with five supported modes',()=>{
+  const a=app();a.api.setup({uid:'me',email:'me@example.com'},false,adapter);a.doc.querySelector('#view').innerHTML='';a.api.pMyRoom();const select=a.doc.querySelector('[aria-label="Music visual effect"]');assert.deepEqual([...select.options].map(x=>x.value),['glow','flames','bubbles','neon','off']);select.value='flames';select.dispatchEvent(new a.w.Event('change'));assert.equal(a.w.localStorage.getItem('midas-music-style'),'flames');assert.equal(a.doc.body.getAttribute('data-beat-style'),'flames');a.close();
 });

@@ -215,7 +215,10 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (memberAllowed() && resource.data.kind == 'creator'
         && resource.data.get('owner', '') == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','blurb','link','img'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','blurb','link','img','buttonLabel','buttonBg','buttonColor','buttonShape'])
+        && request.resource.data.get('buttonLabel', '') is string && request.resource.data.get('buttonLabel', '').size() <= 40
+        && hex(request.resource.data.get('buttonBg', '#f5c542')) && hex(request.resource.data.get('buttonColor', '#1a1204'))
+        && request.resource.data.get('buttonShape', 'rounded') in ['rounded','pill','square']
         && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
         && request.resource.data.blurb is string && request.resource.data.blurb.size() <= 4000
         && request.resource.data.link is string && request.resource.data.link.size() <= 300
