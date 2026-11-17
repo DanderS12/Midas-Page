@@ -12,3 +12,7 @@
 /* Static kintsugi-like cracks stay around the perimeter and never capture clicks. */
 .card.arcade-page::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;background:url("media/arcade-gold-cracks.svg") center/100% 100% no-repeat;filter:drop-shadow(0 0 3px #ffce6c) drop-shadow(0 0 7px #e89c30aa);opacity:.85}
 .reduce-effects .card.arcade-page::after{filter:none;opacity:.65}@media(prefers-reduced-motion:reduce){.card.arcade-page::after{filter:none;opacity:.65}}
+
+/* Follow measured bass energy, never a fabricated looping beat. */
+.beat-active:not(.reduce-effects) .card.arcade-page::after{opacity:calc(.65 + var(--beat-level,0) * .35);transform:translateY(calc(var(--beat-level,0) * -1.5px));filter:brightness(calc(1 + var(--beat-level,0) * .6)) drop-shadow(0 0 calc(3px + var(--beat-level,0) * 6px) #ffce6c) drop-shadow(0 0 calc(7px + var(--beat-level,0) * 11px) #e89c30aa)}
+@media(prefers-reduced-motion:reduce){.beat-active .card.arcade-page::after{transform:none;filter:none;opacity:.65}}

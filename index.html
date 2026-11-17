@@ -2086,7 +2086,7 @@ function adminCommunity(tabs,say){
   document.getElementById("bar").appendChild(toggle);
   var beatLayer=h('div',{id:'beat-particles','aria-hidden':'true'}),lastParticle=0;document.body.appendChild(beatLayer);
   document.body.setAttribute('data-beat-style',lstore('midas-music-style')||'glow');
-  function stop(){beatLayer.innerHTML='';cancelAnimationFrame(frame);frame=0;document.body.classList.remove("beat-active");document.documentElement.style.setProperty("--beat-glow","0px");}
+  function stop(){beatLayer.innerHTML='';cancelAnimationFrame(frame);frame=0;document.body.classList.remove("beat-active");document.documentElement.style.setProperty("--beat-glow","0px");document.documentElement.style.setProperty("--beat-level","0");}
   function start(){
     stop();if((lstore('midas-music-style')||'glow')==='off'||!enabled||motion.matches||document.body.classList.contains('reduce-effects')||player.paused||document.hidden)return;
     try{
@@ -2100,7 +2100,7 @@ function adminCommunity(tabs,say){
       function tick(){if((lstore('midas-music-style')||'glow')==='off'||!enabled||motion.matches||document.body.classList.contains('reduce-effects')||player.paused||document.hidden){stop();return;}analyser.getByteFrequencyData(bins);var bass=0;for(var i=1;i<16;i++)bass+=bins[i];smooth=smooth*.65+(bass/(15*255))*.35;
         var style=lstore('midas-music-style')||'glow';
         if((style==='flames'||style==='bubbles')&&smooth>.16&&performance.now()-lastParticle>140&&beatLayer.childElementCount<12){lastParticle=performance.now();var particle=h('i',{'class':'beat-particle'+(style==='flames'?' flame':''),style:'--x:'+(Math.random()*96)+'%;--s:'+(12+smooth*25)+'px'});particle.addEventListener('animationend',function(){particle.remove();},{once:true});beatLayer.appendChild(particle);}
-        document.documentElement.style.setProperty("--beat-glow",(smooth*30).toFixed(1)+"px");document.body.classList.add("beat-active");frame=requestAnimationFrame(tick);}
+        document.documentElement.style.setProperty("--beat-level",Math.max(0,Math.min(1,smooth)).toFixed(3));document.documentElement.style.setProperty("--beat-glow",(smooth*30).toFixed(1)+"px");document.body.classList.add("beat-active");frame=requestAnimationFrame(tick);}
       frame=requestAnimationFrame(tick);
     }catch(e){stop();}
   }

@@ -249,3 +249,6 @@ test('Arcade galaxy decorations stay inside its box and are hidden from assistiv
 test('gold Arcade cracks are static, perimeter-scoped and do not intercept controls',()=>{
   const css=fs.readFileSync(require.resolve('../lounge.css'),'utf8');assert.match(css,/\.card\.arcade-page::after\{[^}]*pointer-events:none/);assert.match(css,/arcade-gold-cracks\.svg/);assert.match(css,/\.reduce-effects \.card\.arcade-page::after\{filter:none/);const art=fs.readFileSync(require.resolve('../media/arcade-gold-cracks.svg'),'utf8');assert.doesNotMatch(art,/<script|<animate|href=/);assert.match(art,/stroke="#ffc85a"/);
 });
+test('Arcade cracks react to measured audio and reset with reduced motion or stopped playback',()=>{
+  const css=fs.readFileSync(require.resolve('../lounge.css'),'utf8');assert.match(css,/\.beat-active:not\(\.reduce-effects\) \.card\.arcade-page::after/);assert.match(css,/translateY\(calc\(var\(--beat-level,0\)/);assert.match(css,/@media\(prefers-reduced-motion:reduce\)\{\.beat-active \.card\.arcade-page::after\{transform:none/);assert.match(html,/setProperty\("--beat-level",Math.max\(0,Math.min\(1,smooth\)\)/);assert.match(html,/setProperty\("--beat-level","0"\)/);
+});
