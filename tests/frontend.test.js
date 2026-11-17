@@ -17,7 +17,7 @@ function app() {
   w.HTMLMediaElement.prototype.play = () => Promise.resolve();w.HTMLMediaElement.prototype.pause = () => {};w.HTMLMediaElement.prototype.load = () => {};
   w.URL.createObjectURL = () => 'blob:test';w.URL.revokeObjectURL = () => {};
   w.eval(classic.replace('\nroute();\n})();', `
-    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,pAlerts:pAlerts,pCassie:pCassie,pArcade:pArcade,arcadeAdmin:arcadeAdmin,arcadeURL:arcadeURL,groupedAlerts:groupedAlerts,creatorLink:creatorLink,sponsorBanner:sponsorBanner,pRooms:pRooms,memberSafety:memberSafety,renderDM:renderDM,markConversationRead:markConversationRead,updateMessageBadge:updateMessageBadge,activeAnnouncements:activeAnnouncements,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,themeOf:themeOf,THEMES:THEMES,applySite:applySite,
+    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,pHome:pHome,photoGrid:photoGrid,storyPics:storyPics,savedImage:savedImage,pictureElement:pictureElement,pAlerts:pAlerts,pCassie:pCassie,pArcade:pArcade,arcadeAdmin:arcadeAdmin,arcadeURL:arcadeURL,groupedAlerts:groupedAlerts,creatorLink:creatorLink,sponsorBanner:sponsorBanner,pRooms:pRooms,memberSafety:memberSafety,renderDM:renderDM,markConversationRead:markConversationRead,updateMessageBadge:updateMessageBadge,activeAnnouncements:activeAnnouncements,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,themeOf:themeOf,THEMES:THEMES,applySite:applySite,
       entranceReady:function(){entranceReady=true;},
       setup:function(user,admin,adapter){me=user;isAdmin=admin;db=adapter;assets={upload:async function(){return {url:'data:image/jpeg;base64,test'};}};},
       recipient:function(uid){dmWith=uid;},roleClass:roleClass};
@@ -254,4 +254,21 @@ test('Arcade cracks react to measured audio and reset with reduced motion or sto
 });
 test('Midas loading screen ends on readiness and offers recovery on connection failure',()=>{
   const dom=new JSDOM(html,{runScripts:'outside-only',url:'https://example.test/'}),w=dom.window;w.eval(fs.readFileSync(require.resolve('../loading.js'),'utf8'));const screen=w.document.querySelector('#midas-loading');assert.equal(screen.hidden,false);w.MidasLoading.failed();assert.equal(w.document.querySelector('#loading-actions').hidden,false);assert.match(w.document.querySelector('#loading-message').textContent,/could not connect/);w.MidasLoading.ready();assert.equal(screen.hidden,true);assert.equal(w.document.body.hasAttribute('aria-busy'),false);dom.window.close();
+});
+test('room and story pictures accept PNG/WebP/HTTPS records rather than silently skipping them',()=>{
+  const a=app(),records=[{id:'png',img:'data:image/png;base64,YQ==',ts:1},{id:'webp',img:'data:image/webp;base64,YQ==',ts:2},{id:'url',url:'https://example.com/photo.jpg',ts:3}];
+  for(const render of [a.api.photoGrid,a.api.storyPics]){const box=a.doc.createElement('div');render(box,records,false);assert.equal(box.querySelectorAll('img').length,3);assert.ok(box.querySelector('img[loading=eager]'));}
+  a.close();
+});
+test('image source validation preserves GitHub project paths and rejects active content',()=>{
+  const a=app();a.w.history.replaceState(null,'','/Midas-Page/');assert.equal(a.api.savedImage('photos/picture.jpg'),'https://example.test/Midas-Page/photos/picture.jpg');assert.equal(a.api.savedImage('data:image/gif;base64,YQ=='),'data:image/gif;base64,YQ==');for(const value of ['javascript:alert(1)','data:image/svg+xml;base64,YQ==','data:text/html;base64,YQ==','https://user:pass@example.com/x'])assert.equal(a.api.savedImage(value),null);a.close();
+});
+test('failed pictures show a retry control without deleting their record',()=>{
+  const a=app(),box=a.api.pictureElement('https://example.com/a.jpg','Example',true);a.doc.querySelector('#view').appendChild(box);const image=box.querySelector('img');image.dispatchEvent(new a.w.Event('error'));assert.equal(image.hidden,true);assert.match(box.textContent,/record is still here/);box.querySelector('button').click();assert.equal(image.hidden,false);assert.equal(box.querySelector('.image-error'),null);a.close();
+});
+test('unsupported saved images show a visible explanation instead of disappearing',()=>{
+  const a=app(),box=a.doc.createElement('div');a.api.storyPics(box,[{id:'bad',img:'data:image/svg+xml;base64,YQ==',ts:1}]);assert.equal(box.children.length,1);assert.match(box.textContent,/unsupported or missing source/);a.close();
+});
+test('startup snapshot refreshes coalesce into a single scheduled page render',async()=>{
+  const a=app();let cleared=0;const view=a.doc.querySelector('#view'),observer=new a.w.MutationObserver(records=>{cleared+=records.filter(r=>r.removedNodes.length>0).length;});observer.observe(view,{childList:true});a.api.refresh();a.api.refresh();a.api.refresh();await new Promise(r=>setTimeout(r,130));observer.disconnect();assert.equal(cleared,1);a.close();
 });
