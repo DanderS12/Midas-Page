@@ -243,3 +243,6 @@ test('Arcade image adapter rejects oversized and invalid input before decoding',
 test('Arcade admin enforces game count and refuses invalid website writes',async()=>{
   const a=app(),writes=[];a.api.setup({uid:'admin'},true,{...adapter,doc:path=>({set:async data=>writes.push(data)})});a.doc.querySelector('#view').innerHTML='';a.api.pAdmin();for(let i=0;i<9;i++)button(a.doc,'Add game button').click();assert.equal(a.doc.querySelectorAll('.arcade-editor-row').length,8);button(a.doc,'Save arcade games').click();await new Promise(r=>setImmediate(r));assert.equal(writes.length,0);assert.match(a.doc.querySelector('#editor-admin-arcade-panel').textContent,/valid https/);a.close();
 });
+test('Arcade galaxy decorations stay inside its box and are hidden from assistive technology',()=>{
+  const a=app();a.doc.querySelector('#view').innerHTML='';a.api.pArcade();const box=a.doc.querySelector('.arcade-page');assert.equal(box.querySelectorAll('.arcade-paw').length,4);assert.equal(box.querySelector('.arcade-paws').getAttribute('aria-hidden'),'true');assert.equal(a.doc.querySelector('body > .arcade-paws'),null);assert.equal(box.querySelector('h2').textContent,"Dander's Arcade Games");a.close();
+});

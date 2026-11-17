@@ -768,6 +768,7 @@ function arcadePicture(value){return typeof value==='string'&&value.length<60000
 function arcadeLinks(){return (Array.isArray(state.arcade.links)?state.arcade.links:[]).filter(function(link){return link&&typeof link.label==='string'&&link.label.trim()&&arcadeURL(link.url);}).slice(0,8);}
 function pArcade(){
   var page=h('section',{'class':'card arcade-page'},[h('p',{'class':'arcade-kicker',text:'Play · Explore · Have fun'}),h('h2',{'class':'gold',text:"Dander's Arcade Games"}),h('p',{'class':'note',text:'Choose a game to visit its website. Links open in a new tab; external sites have their own privacy policies.'})]);
+  var paws=h('div',{'class':'arcade-paws','aria-hidden':'true'});for(var paw=0;paw<4;paw++)paws.appendChild(h('span',{'class':'arcade-paw'}));page.insertBefore(paws,page.firstChild);
   var links=arcadeLinks(),grid=h('div',{'class':'grid arcade-grid'});
   links.forEach(function(link){
     var button=h('a',{'class':'arcade-game',href:arcadeURL(link.url),target:'_blank',rel:'noopener noreferrer'});
