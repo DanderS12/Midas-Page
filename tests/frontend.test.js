@@ -252,3 +252,6 @@ test('gold Arcade cracks are static, perimeter-scoped and do not intercept contr
 test('Arcade cracks react to measured audio and reset with reduced motion or stopped playback',()=>{
   const css=fs.readFileSync(require.resolve('../lounge.css'),'utf8');assert.match(css,/\.beat-active:not\(\.reduce-effects\) \.card\.arcade-page::after/);assert.match(css,/translateY\(calc\(var\(--beat-level,0\)/);assert.match(css,/@media\(prefers-reduced-motion:reduce\)\{\.beat-active \.card\.arcade-page::after\{transform:none/);assert.match(html,/setProperty\("--beat-level",Math.max\(0,Math.min\(1,smooth\)\)/);assert.match(html,/setProperty\("--beat-level","0"\)/);
 });
+test('Midas loading screen ends on readiness and offers recovery on connection failure',()=>{
+  const dom=new JSDOM(html,{runScripts:'outside-only',url:'https://example.test/'}),w=dom.window;w.eval(fs.readFileSync(require.resolve('../loading.js'),'utf8'));const screen=w.document.querySelector('#midas-loading');assert.equal(screen.hidden,false);w.MidasLoading.failed();assert.equal(w.document.querySelector('#loading-actions').hidden,false);assert.match(w.document.querySelector('#loading-message').textContent,/could not connect/);w.MidasLoading.ready();assert.equal(screen.hidden,true);assert.equal(w.document.body.hasAttribute('aria-busy'),false);dom.window.close();
+});

@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Midas Room</title>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="lounge.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Lora:wght@400;600&display=swap">
 <style>
@@ -106,7 +109,12 @@ select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);
 @media(prefers-reduced-motion:reduce){.beat-active .card,.beat-active .roomwrap,.beat-active .ph,.beat-active img{box-shadow:none}}
 </style>
 </head>
-<body>
+<body aria-busy="true">
+<div id="midas-loading" role="status" aria-live="polite" aria-label="Loading The Midas Room">
+  <div class="loading-vault"><div class="loading-crown" aria-hidden="true">♛</div><h1>The Midas Room</h1><p id="loading-message">Preparing your golden moments…</p><div class="loading-track" aria-hidden="true"><span></span></div><div id="loading-actions" hidden><button id="loading-retry" type="button">Retry</button> <button id="loading-dismiss" type="button">Show entrance</button></div></div>
+</div>
+<script src="loading.js"></script>
+<noscript><style>#midas-loading{display:none}</style><p>This website needs JavaScript enabled to load its content.</p></noscript>
 <button id="admin-access" type="button" aria-label="Administrator login"></button>
 <canvas id="glitter"></canvas>
 <canvas id="fxtop"></canvas>
@@ -123,7 +131,7 @@ select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);
 <div id="lb"><img alt=""></div>
 <div id="vpill"><span id="vpt"></span><button id="vpm" type="button">Mute</button><button id="vpl" type="button" class="del">Leave</button></div>
 <div id="vaudio" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden"></div>
-<div id="bar"><span id="bt"></span><audio id="au" controls loop preload="auto"></audio></div>
+<div id="bar"><span id="bt"></span><audio id="au" controls loop preload="metadata"></audio></div>
 
 <div class="wrap">
   <div class="visitor-controls"><button id="reduce-effects" type="button" aria-pressed="false">Reduce effects: off</button></div>
@@ -295,12 +303,13 @@ var db=null,assets=null,view=document.getElementById("view");
 var isAdmin=false,me=null;
 var errShown=false;
 window.fbError=function(e){
+  if(!entranceReady&&window.MidasLoading)MidasLoading.failed();
   if(errShown)return;errShown=true;
   var b=h("div",{style:"position:fixed;left:8px;right:8px;bottom:8px;z-index:60;background:#5a1010;color:#ffd7d7;padding:10px 14px;border-radius:10px;font-size:.85rem;cursor:pointer",text:"Database message: "+((e&&e.code)||"error")+". If you just updated the site, publish the newest firestore.rules in Firebase. (tap to hide)",onclick:function(){b.remove();}});
   document.body.appendChild(b);
 };
 
-function h(tag,attrs,kids){var e=document.createElement(tag);for(var k in (attrs||{})){if(k==="text")e.textContent=attrs[k];else if(k.slice(0,2)==="on")e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(c);});return e;}
+function h(tag,attrs,kids){var e=document.createElement(tag);if(tag==="img"){e.loading="lazy";e.decoding="async";}for(var k in (attrs||{})){if(k==="text")e.textContent=attrs[k];else if(k.slice(0,2)==="on")e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(c);});return e;}
 function store(k,v){try{if(v===undefined)return sessionStorage.getItem(k);sessionStorage.setItem(k,v);}catch(e){return null;}}
 function lstore(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v);}catch(e){return null;}}
 
@@ -2117,7 +2126,7 @@ function loaded(){
   db.doc('settings/arcade').onSnapshot(function(s){state.arcade=s.exists?s.data():{links:[]};if(location.hash==='#arcade'||location.hash==='#admin')refresh();});
   db.collection("siteRoles").onSnapshot(function(s){state.roles=snap(s);refresh();});
   db.collection("announcements").onSnapshot(function(s){state.announcements=snap(s);refresh();},{limit:20});
-  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});entranceReady=true;applySite();applyCorner();refresh();});
+  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});entranceReady=true;if(window.MidasLoading)MidasLoading.ready();applySite();applyCorner();refresh();});
   db.collection("photos").onSnapshot(function(s){state.photos=snap(s);refresh();});
   db.collection("comics").onSnapshot(function(s){state.comics=snap(s);refresh();});
   db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")refresh();});
