@@ -246,3 +246,6 @@ test('Arcade admin enforces game count and refuses invalid website writes',async
 test('Arcade galaxy decorations stay inside its box and are hidden from assistive technology',()=>{
   const a=app();a.doc.querySelector('#view').innerHTML='';a.api.pArcade();const box=a.doc.querySelector('.arcade-page');assert.equal(box.querySelectorAll('.arcade-paw').length,4);assert.equal(box.querySelector('.arcade-paws').getAttribute('aria-hidden'),'true');assert.equal(a.doc.querySelector('body > .arcade-paws'),null);assert.equal(box.querySelector('h2').textContent,"Dander's Arcade Games");a.close();
 });
+test('gold Arcade cracks are static, perimeter-scoped and do not intercept controls',()=>{
+  const css=fs.readFileSync(require.resolve('../lounge.css'),'utf8');assert.match(css,/\.card\.arcade-page::after\{[^}]*pointer-events:none/);assert.match(css,/arcade-gold-cracks\.svg/);assert.match(css,/\.reduce-effects \.card\.arcade-page::after\{filter:none/);const art=fs.readFileSync(require.resolve('../media/arcade-gold-cracks.svg'),'utf8');assert.doesNotMatch(art,/<script|<animate|href=/);assert.match(art,/stroke="#ffc85a"/);
+});
