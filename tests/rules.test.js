@@ -114,3 +114,21 @@ test('legacy profile edits preserve their name without forcing an automatic rena
   await seed();await assertSucceeds(updateDoc(doc(user('creator').firestore(),'users/creator'),{about:'My new bio'}));
   await assertFails(updateDoc(doc(user('creator').firestore(),'users/creator'),{name:'Unclaimed'}));
 });
+test('assigned creator may customize website button but cannot change page ownership',async()=>{
+  await seed();const page=doc(user('creator').firestore(),'sponsors/page');
+  await assertSucceeds(updateDoc(page,{link:'https://example.com',buttonLabel:'My shop',buttonBg:'#112233',buttonColor:'#ffffff',buttonShape:'pill'}));
+  await assertFails(updateDoc(page,{buttonBg:'red;position:fixed'}));
+  await assertFails(updateDoc(page,{buttonShape:'script'}));
+  await assertFails(updateDoc(page,{owner:'stranger'}));
+  await assertFails(updateDoc(doc(user('stranger').firestore(),'sponsors/page'),{buttonLabel:'Hijack'}));
+});
+test('Arcade links are publicly readable but only admins may create, edit or delete them',async()=>{
+  const data={links:[{id:'puzzle',label:'Puzzle',url:'https://example.com',image:''}]};
+  await assertSucceeds(setDoc(doc(admin(),'settings/arcade'),data));
+  await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(),'settings/arcade')));
+  await assertFails(setDoc(doc(user('creator').firestore(),'settings/arcade'),{links:[]}));
+  await assertFails(deleteDoc(doc(user('creator').firestore(),'settings/arcade')));
+  await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(),'settings/arcade'),data));
+  await assertSucceeds(updateDoc(doc(admin(),'settings/arcade'),{links:[]}));
+  await assertSucceeds(deleteDoc(doc(admin(),'settings/arcade')));
+});

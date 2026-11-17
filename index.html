@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Midas Room</title>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="lounge.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Lora:wght@400;600&display=swap">
 <style>
 :root{--bg:#0b0805;--panel:#17110a;--gold:#f5c542;--gold2:#c8921b;--gold3:#fff1b0;--text:#f3e6c4;--muted:#b9a273;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -105,7 +109,12 @@ select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);
 @media(prefers-reduced-motion:reduce){.beat-active .card,.beat-active .roomwrap,.beat-active .ph,.beat-active img{box-shadow:none}}
 </style>
 </head>
-<body>
+<body aria-busy="true">
+<div id="midas-loading" role="status" aria-live="polite" aria-label="Loading The Midas Room">
+  <div class="loading-vault"><div class="loading-crown" aria-hidden="true">♛</div><h1>The Midas Room</h1><p id="loading-message">Preparing your golden moments…</p><div class="loading-track" aria-hidden="true"><span></span></div><div id="loading-actions" hidden><button id="loading-retry" type="button">Retry</button> <button id="loading-dismiss" type="button">Show entrance</button></div></div>
+</div>
+<script src="loading.js"></script>
+<noscript><style>#midas-loading{display:none}</style><p>This website needs JavaScript enabled to load its content.</p></noscript>
 <button id="admin-access" type="button" aria-label="Administrator login"></button>
 <canvas id="glitter"></canvas>
 <canvas id="fxtop"></canvas>
@@ -122,14 +131,14 @@ select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);
 <div id="lb"><img alt=""></div>
 <div id="vpill"><span id="vpt"></span><button id="vpm" type="button">Mute</button><button id="vpl" type="button" class="del">Leave</button></div>
 <div id="vaudio" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden"></div>
-<div id="bar"><span id="bt"></span><audio id="au" controls loop preload="auto"></audio></div>
+<div id="bar"><span id="bt"></span><audio id="au" controls loop preload="metadata"></audio></div>
 
 <div class="wrap">
   <div class="visitor-controls"><button id="reduce-effects" type="button" aria-pressed="false">Reduce effects: off</button></div>
   <header><img class="corner" id="cr" src="media/corner1.jpg" alt="Golden portrait" onclick="document.getElementById('lb').querySelector('img').src=this.src;document.getElementById('lb').style.display='flex'"><h1><span>👑</span> <span class="gold">The Midas Room</span> <span>👑</span></h1><p class="sub">A private gallery of golden moments</p></header>
   <nav id="nav">
     <button id="menubtn" type="button">☰ Menu</button>
-    <a href="#home">✨ Gallery</a><a href="#comic">📜 Comic</a><a href="#story">👑 Story</a><a href="#chat">💬 Live Chat</a><a href="#login">🔐 Login</a><a href="#rooms">🏆 Rooms</a><a href="#friends">👥 Friends</a><a href="#alerts">🔔 Alerts</a><a href="#dm">💌 Messages</a><a href="#voice">🎙️ Voice</a><a href="#settings">⚙️ Settings</a><a href="#nsfw">🔞 18+</a><a href="#sponsors">💖 Creators</a><a href="#give">🪙 Donate</a>
+    <a href="#home">✨ Gallery</a><a href="#comic">📜 Comic</a><a href="#story">👑 Story</a><a href="#chat">💬 Live Chat</a><a href="#login">🔐 Login</a><a href="#rooms">🏆 Rooms</a><a href="#friends">👥 Friends</a><a href="#alerts">🔔 Alerts</a><a href="#dm">💌 Messages</a><a href="#voice">🎙️ Voice</a><a href="#settings">⚙️ Settings</a><a href="#nsfw">🔞 18+</a><a href="#sponsors">💖 Creators</a><a href="#give">🪙 Donate</a><a href="#cassie">🍸 Cassie Lounge</a><a href="#arcade">🎮 Arcade Games</a>
   </nav>
   <main id="view"></main>
 </div>
@@ -266,6 +275,12 @@ if(C.firebase&&C.firebase.apiKey){
         tx.set(room,restored);
       });
     },
+    arcadeImage:async function(file){
+      if(!['image/jpeg','image/png','image/gif','image/webp'].includes(file.type)||!file.size||file.size>10*1024*1024)throw new Error('Choose a JPG, PNG, GIF or WebP image up to 10 MB.');
+      const image=await shrinkTo(file,320,180,.65);
+      if(image.length>=60000)throw new Error('This picture is too detailed. Please choose a simpler image.');
+      return image;
+    },
     dmUpload:async function(file){
       if(!['image/jpeg','image/png','image/gif','image/webp'].includes(file.type)||file.size>10*1024*1024||!file.size)throw new Error('Choose a JPG, PNG, GIF or WebP image up to 10 MB.');
       return {image:await shrink(file),imageName:file.name.slice(0,120)};
@@ -283,17 +298,18 @@ if(C.firebase&&C.firebase.apiKey){
 <script>
 (function(){
 
-var state={photos:[],comments:[],comics:[],likes:[],chat:[],users:[],dmIn:[],dmOut:[],voice:{},age:{},stories:[],myStories:[],adult:false,adults:[],nsfw:[],sponsors:[],cpics:[],followsOut:[],followsIn:[],frOut:[],frIn:[],notifs:[],presence:{},settings:{},announcements:[],directory:[],roles:[],loginHistory:[],blockedEmails:[],memberBlocks:[],reports:[]};
+var state={photos:[],comments:[],comics:[],likes:[],chat:[],users:[],dmIn:[],dmOut:[],voice:{},age:{},stories:[],myStories:[],adult:false,adults:[],nsfw:[],sponsors:[],cpics:[],followsOut:[],followsIn:[],frOut:[],frIn:[],notifs:[],presence:{},settings:{},arcade:{links:[]},announcements:[],directory:[],roles:[],loginHistory:[],blockedEmails:[],memberBlocks:[],reports:[]};
 var db=null,assets=null,view=document.getElementById("view");
 var isAdmin=false,me=null;
 var errShown=false;
 window.fbError=function(e){
+  if(!entranceReady&&window.MidasLoading)MidasLoading.failed();
   if(errShown)return;errShown=true;
   var b=h("div",{style:"position:fixed;left:8px;right:8px;bottom:8px;z-index:60;background:#5a1010;color:#ffd7d7;padding:10px 14px;border-radius:10px;font-size:.85rem;cursor:pointer",text:"Database message: "+((e&&e.code)||"error")+". If you just updated the site, publish the newest firestore.rules in Firebase. (tap to hide)",onclick:function(){b.remove();}});
   document.body.appendChild(b);
 };
 
-function h(tag,attrs,kids){var e=document.createElement(tag);for(var k in (attrs||{})){if(k==="text")e.textContent=attrs[k];else if(k.slice(0,2)==="on")e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(c);});return e;}
+function h(tag,attrs,kids){var e=document.createElement(tag);if(tag==="img"){e.loading="lazy";e.decoding="async";}for(var k in (attrs||{})){if(k==="text")e.textContent=attrs[k];else if(k.slice(0,2)==="on")e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(c);});return e;}
 function store(k,v){try{if(v===undefined)return sessionStorage.getItem(k);sessionStorage.setItem(k,v);}catch(e){return null;}}
 function lstore(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v);}catch(e){return null;}}
 
@@ -339,7 +355,9 @@ function route(){
   var r=(location.hash||"#home").slice(1),rid=null;
   var creatorId=null;if(r.indexOf("creator-")===0){creatorId=r.slice(8);r="creator";}
   if(r.indexOf("room-")===0){rid=r.slice(5);r="room";}
-  if(["home","comic","story","chat","login","rooms","friends","alerts","sponsors","settings","nsfw","creator","room","dm","voice","give","admin"].indexOf(r)<0)r="home";
+  if(["home","comic","story","chat","login","rooms","friends","alerts","sponsors","settings","nsfw","creator","room","dm","voice","give","admin","cassie","arcade"].indexOf(r)<0)r="home";
+  loungeArrival=r==='cassie'&&previousRoute!=='cassie';previousRoute=r;document.body.classList.toggle('lounge-route',r==='cassie');
+  dmSignature='';
   if(roomUnsub){try{roomUnsub();}catch(e){}roomUnsub=null;}
   roomSong=null;roomFx=null;if(r!=="room")plist=null;
   pageSubs.forEach(function(f){try{f();}catch(e){}});pageSubs=[];
@@ -349,7 +367,9 @@ function route(){
     var notices=h("section",{"class":"card", "aria-label":"Announcements"},[h("h2",{"class":"gold",text:"📣 Announcements"})]);
     activeAnnouncements(Date.now()).sort(function(a,b){return b.ts-a.ts;}).slice(0,5).forEach(function(a){notices.appendChild(h("p",{text:a.text,"data-announcement-expiry":a.expiresAt||0}));});view.appendChild(notices);
   }
-  ({creator:function(){pCreator(creatorId);},home:pHome,comic:pComic,story:pStory,chat:pChat,rooms:pRooms,login:pLogin,friends:pFriends,alerts:pAlerts,sponsors:pSponsors,settings:pMyRoom,nsfw:pNsfw,room:function(){pRoom(rid);},dm:pDM,voice:pVoice,give:pGive,admin:pAdmin})[r]();
+  var pin=sponsorBanner('top');if(pin)view.appendChild(pin);
+  ({arcade:pArcade,cassie:pCassie,creator:function(){pCreator(creatorId);},home:pHome,comic:pComic,story:pStory,chat:pChat,rooms:pRooms,login:pLogin,friends:pFriends,alerts:pAlerts,sponsors:pSponsors,settings:pMyRoom,nsfw:pNsfw,room:function(){pRoom(rid);},dm:pDM,voice:pVoice,give:pGive,admin:pAdmin})[r]();
+  var bottomPin=sponsorBanner('bottom');if(bottomPin)view.appendChild(bottomPin);
   setFx(roomFx);paintDots();
   if(roomSong)setSong(100,roomSong.url,roomSong.title,roomSong.list);else setSong({home:1,comic:2,story:3,give:4,admin:5}[r]||0);
   curR=r;applyCorner();
@@ -667,13 +687,13 @@ function notify(to,type,text){
   db.collection("notifs").doc("n"+Date.now()+Math.random().toString(36).slice(2,6)).set({to:to,from:me.uid,fromName:myName().slice(0,40),type:type,text:String(text).slice(0,120),ts:Date.now(),read:false}).catch(function(){});
 }
 function updNotif(){
-  var n=state.notifs.filter(function(x){return !x.read;}).length;
+  var n=groupedAlerts().filter(function(x){return !x.read;}).length;
   var a=document.querySelector('#nav a[href="#alerts"]');if(a)a.textContent="🔔 Alerts"+(n?" ("+n+")":"");
   document.title=(n?"("+n+") ":"")+"The Midas Room";
-  state.notifs.forEach(function(x){
-    if(!x.read&&!seenN[x.id]){
-      seenN[x.id]=1;
-      if(seenInit&&("Notification" in window)&&Notification.permission==="granted"&&document.hidden){try{new Notification((x.fromName||"Someone")+" "+x.text);}catch(e){}}
+  groupedAlerts().forEach(function(x){
+    if(!x.read&&seenN[x.id]!==x.ts){
+      seenN[x.id]=x.ts;
+      if(x.type!=="dm"&&seenInit&&("Notification" in window)&&Notification.permission==="granted"&&document.hidden){try{new Notification((x.fromName||"Someone")+" "+x.text);}catch(e){}}
     }
   });
   seenInit=true;
@@ -730,18 +750,128 @@ function pFriends(){
   state.followsIn.forEach(function(f){c.appendChild(personRow(f.from,[]));});
   view.appendChild(c);
 }
+function groupedAlerts(){
+  var grouped=Object.create(null),other=[];
+  state.notifs.forEach(function(item){if(item.type!=='dm'){other.push(Object.assign({},item,{ids:[item.id]}));return;}
+    var key=item.from,group=grouped[key];if(!group)group=grouped[key]={id:item.id,ids:[],type:'dm',from:item.from,fromName:item.fromName,ts:0,read:true,count:0};
+    group.ids.push(item.id);if(!item.read){group.count++;group.read=false;}if(item.ts>=group.ts){group.ts=item.ts;group.fromName=item.fromName;}
+  });
+  return other.concat(Object.keys(grouped).map(function(key){var item=grouped[key];item.text=item.count?(item.count===1?'sent you a new message':item.count+' new messages'):'Conversation updated';return item;})).sort(function(a,b){return b.ts-a.ts;});
+}
+function creatorLink(page){
+  if(!isHttps(page.link))return null;
+  var background=isHex(page.buttonBg)?page.buttonBg:'#f5c542',color=isHex(page.buttonColor)?page.buttonColor:'#1a1204',shape=['rounded','pill','square'].includes(page.buttonShape)?page.buttonShape:'rounded';
+  return h('a',{'class':'btn creator-link',href:page.link,target:'_blank',rel:'noopener noreferrer',text:page.buttonLabel||'Visit website',style:'background:'+background+';color:'+color+';border-radius:'+(shape==='pill'?'999px':shape==='square'?'0':'10px')+';'});
+}
+function sponsorBanner(position){
+  var sponsor=state.settings.sponsorPin;
+  if(!sponsor||!sponsor.text||sponsor.position!==position)return null;
+  var element=h('aside',{'class':'sponsor-pin','data-position':position,'aria-label':'Pinned sponsor message'},[h('small',{text:'📌 Sponsor message'}),h('p',{text:sponsor.text})]);
+  if(isHttps(sponsor.link))element.appendChild(h('a',{'class':'btn',href:sponsor.link,target:'_blank',rel:'noopener noreferrer',text:sponsor.label||'Visit sponsor'}));return element;
+}
+/* Arcade links are public content; only admins can write settings/arcade. */
+function arcadeURL(value){
+  try{var url=new URL(String(value||'').trim());return url.protocol==='https:'&&!url.username&&!url.password?url.href:null;}catch(e){return null;}
+}
+function arcadePicture(value){return typeof value==='string'&&value.length<60000&&/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(value);}
+function arcadeLinks(){return (Array.isArray(state.arcade.links)?state.arcade.links:[]).filter(function(link){return link&&typeof link.label==='string'&&link.label.trim()&&arcadeURL(link.url);}).slice(0,8);}
+function pArcade(){
+  var page=h('section',{'class':'card arcade-page'},[h('p',{'class':'arcade-kicker',text:'Play · Explore · Have fun'}),h('h2',{'class':'gold',text:"Dander's Arcade Games"}),h('p',{'class':'note',text:'Choose a game to visit its website. Links open in a new tab; external sites have their own privacy policies.'})]);
+  var paws=h('div',{'class':'arcade-paws','aria-hidden':'true'});for(var paw=0;paw<4;paw++)paws.appendChild(h('span',{'class':'arcade-paw'}));page.insertBefore(paws,page.firstChild);
+  var links=arcadeLinks(),grid=h('div',{'class':'grid arcade-grid'});
+  links.forEach(function(link){
+    var button=h('a',{'class':'arcade-game',href:arcadeURL(link.url),target:'_blank',rel:'noopener noreferrer'});
+    if(arcadePicture(link.image))button.appendChild(h('img',{src:link.image,alt:'',loading:'lazy',width:'320',height:'180'}));
+    else button.appendChild(h('span',{'class':'arcade-symbol','aria-hidden':'true',text:'🎮'}));
+    button.appendChild(h('span',{'class':'arcade-label',text:link.label}));button.appendChild(h('small',{text:'Visit game website ↗'}));grid.appendChild(button);
+  });
+  if(!links.length)page.appendChild(h('p',{'class':'note',text:'Games are coming soon. Check back for new links!'}));
+  page.appendChild(grid);view.appendChild(page);
+}
+function arcadeAdmin(container){
+  if(!isAdmin)return;
+  var entries=arcadeLinks().map(function(link){return {id:link.id||crypto.randomUUID(),label:link.label,url:link.url,image:arcadePicture(link.image)?link.image:''};});
+  var list=h('div'),status=h('p',{'class':'note',role:'status','aria-live':'polite'}),busy=false;
+  container.appendChild(h('p',{'class':'note',text:'Add up to 8 game buttons, each with a title, HTTPS website link and optional picture. Changes are public after Save arcade games. Pictures use the existing compressed-image setup, not Firebase Storage.'}));
+  function dirty(){var editor=container.closest('.card');if(editor)editor.setAttribute('data-editor-dirty','true');}
+  function render(){
+    list.innerHTML='';
+    entries.forEach(function(entry,index){
+      var row=h('fieldset',{'class':'arcade-editor-row'},[h('legend',{text:'Game '+(index+1)})]),label=h('input',{maxlength:'60',value:entry.label,'aria-label':'Game '+(index+1)+' title'}),url=h('input',{type:'url',maxlength:'500',value:entry.url,placeholder:'https://…','aria-label':'Game '+(index+1)+' website'}),file=h('input',{type:'file',accept:'image/jpeg,image/png,image/gif,image/webp','aria-label':'Game '+(index+1)+' picture'}),preview=h('div');
+      label.addEventListener('input',function(){entry.label=label.value;dirty();});url.addEventListener('input',function(){entry.url=url.value;dirty();});
+      function showImage(){preview.innerHTML='';if(entry.image)preview.appendChild(h('img',{src:entry.image,alt:'Selected game picture',width:'240',height:'135'}));}
+      file.addEventListener('change',async function(){
+        var selected=file.files[0];if(!selected||busy)return;
+        busy=true;save.disabled=true;file.disabled=true;status.textContent='Compressing game picture…';
+        try{var image=await FB.arcadeImage(selected);entry.image=image;dirty();showImage();status.textContent='Picture ready. Save arcade games to publish it.';}
+        catch(e){status.textContent='Could not prepare picture: '+e.message;}
+        finally{busy=false;save.disabled=false;file.disabled=false;file.value='';}
+      });
+      [h('label',{text:'Button title'}),label,h('label',{text:'Website (https://)'}),url,h('label',{text:'Optional picture (up to 10 MB input; compressed JPEG)'}),file,preview].forEach(function(el){row.appendChild(el);});
+      row.appendChild(h('button',{type:'button',text:'Remove picture',onclick:function(){if(busy)return;entry.image='';file.value='';dirty();showImage();}}));
+      row.appendChild(h('button',{type:'button','class':'del',text:'Delete game button',onclick:function(){if(busy)return;if(!confirm('Remove this game button? Save to publish the deletion.'))return;entries.splice(index,1);dirty();render();}}));
+      showImage();list.appendChild(row);
+    });
+    if(!entries.length)list.appendChild(h('p',{'class':'note',text:'No game buttons yet. Add your first game below.'}));
+  }
+  var add=h('button',{type:'button',text:'Add game button',onclick:function(){if(busy)return;if(entries.length>=8){status.textContent='You can add up to 8 game buttons.';return;}entries.push({id:crypto.randomUUID(),label:'',url:'',image:''});dirty();render();}});
+  var save=h('button',{type:'button',text:'Save arcade games',onclick:async function(){
+    if(busy)return;
+    var data=[];
+    for(var i=0;i<entries.length;i++){
+      var entry=entries[i],target=arcadeURL(entry.url);
+      if(!entry.label.trim()||entry.label.trim().length>60||!target||target.length>500){status.textContent='Game '+(i+1)+' needs a title (up to 60 characters) and a valid https:// link without login credentials.';return;}
+      data.push({id:entry.id,label:entry.label.trim(),url:target,image:entry.image||''});
+    }
+    busy=true;save.disabled=true;status.textContent='Saving arcade games…';
+    // Freeze a snapshot: edits made during the write are not included in this save.
+    var snapshot=JSON.stringify(entries);
+    try{await db.doc('settings/arcade').set({links:data});state.arcade={links:data};status.textContent=JSON.stringify(entries)===snapshot?'Arcade games saved.':'Saved. You have newer edits; save again to publish them.';}
+    catch(e){status.textContent='Could not save arcade games: '+e.message;}
+    finally{busy=false;save.disabled=false;}
+  }});
+  container.appendChild(list);container.appendChild(add);container.appendChild(save);container.appendChild(status);render();
+}
+
+function pCassie(){
+  view.appendChild(h('section',{'class':'cassie-lounge'+(loungeArrival?' entering':''),'aria-label':'Cassie Lounge'},[
+    h('div',{'class':'lounge-web','aria-hidden':'true'}),h('div',{'class':'lounge-web right','aria-hidden':'true'}),
+    h('p',{'class':'lounge-kicker',text:'Pink neon · golden evenings'}),h('h2',{text:'Cassie Lounge'}),
+    h('p',{text:'A little jazz, a little gold, and a place to unwind. Welcome to the pink-and-gold corner of the Midas community.'}),
+    h('p',{text:'Settle in, choose your music, and join the conversation.'}),
+    h('a',{'class':'btn',href:'#chat',text:'Join Live Chat'}),h('a',{'class':'btn',href:'#dm',text:'Private Messages'}),h('a',{'class':'btn',href:'#settings',text:'Choose music & effects'})
+  ]));
+  loungeArrival=false;
+}
+var loungeArrival=false,previousRoute='',dmWindow=80,dmSignature='';
+function musicEffectsControl(container){
+  var select=h('select',{'aria-label':'Music visual effect'}),selected=lstore('midas-music-style')||'glow';
+  [['glow','Classic glow'],['flames','Flames'],['bubbles','Bubbles'],['neon','Pink & gold neon'],['off','Off']].forEach(function(option){select.appendChild(h('option',{value:option[0],text:option[1]}));});
+  select.value=selected;select.addEventListener('change',function(){lstore('midas-music-style',select.value);document.body.setAttribute('data-beat-style',select.value);dispatchEvent(new Event('effects-preference'));});
+  container.appendChild(h('h3',{'class':'gold',text:'Music visual effects'}));container.appendChild(h('label',{text:'Beat-reactive borders, images and particles'}));container.appendChild(select);
+  container.appendChild(h('p',{'class':'note beat-help',text:'Saved on this browser. Effects follow the main music player when audio capture is supported. Flames and bubbles add a small number of particles; Reduce effects and system reduced-motion take priority. This does not change other visitors’ preferences.'}));
+}
+function sponsorPinEditor(container,say){
+  var saved=state.settings.sponsorPin||{},text=h('textarea',{maxlength:'1000',rows:'3','aria-label':'Pinned sponsor message'}),link=h('input',{type:'url',maxlength:'300','aria-label':'Sponsor website',placeholder:'https://…'}),label=h('input',{maxlength:'40','aria-label':'Sponsor button label'}),position=h('select',{'aria-label':'Sponsor message position'});
+  text.value=saved.text||'';link.value=saved.link||'';label.value=saved.label||'';
+  [['top','Top of every page'],['bottom','Bottom of every page']].forEach(function(p){position.appendChild(h('option',{value:p[0],text:p[1]}));});position.value=saved.position||'top';
+  container.appendChild(h('h3',{'class':'gold',text:'Pinned sponsor message'}));container.appendChild(h('p',{'class':'note',text:'Stays visible until an admin removes it. Choose top or bottom placement; no expiry. Public message—do not include private information.'}));[text,link,label,position].forEach(function(el){container.appendChild(el);});
+  container.appendChild(h('button',{type:'button',text:'Save & pin sponsor message',onclick:async function(){try{if(!text.value.trim())throw new Error('Enter a sponsor message.');if(link.value&&!isHttps(link.value.trim()))throw new Error('Use an https:// link.');await saveSettings({sponsorPin:{text:text.value.trim(),link:link.value.trim(),label:label.value.trim(),position:position.value}});say('Sponsor message pinned.');}catch(e){say(e.message);}}}));
+  container.appendChild(h('button',{type:'button','class':'del',text:'Remove pinned sponsor message',onclick:function(){saveSettings({sponsorPin:null}).then(function(){say('Sponsor message removed.');}).catch(function(e){say(e.message);});}}));
+}
+
 function pAlerts(){
   if(!me){needLogin();return;}
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"🔔 Alerts"})]);
-  var list=state.notifs.slice().sort(function(a,b){return b.ts-a.ts;});
+  var list=groupedAlerts();
   var unread=list.filter(function(x){return !x.read;});
-  c.appendChild(h("button",{type:"button",text:"Mark all as read",onclick:function(){unread.forEach(function(x){db.collection("notifs").doc(x.id).update({read:true});});}}));
+  c.appendChild(h("button",{type:"button",text:"Mark all as read",onclick:function(){unread.forEach(function(x){x.ids.forEach(function(id){db.collection("notifs").doc(id).update({read:true}).catch(window.fbError);});});}}));
   if("Notification" in window&&Notification.permission==="default"){c.appendChild(h("span",{text:"  "}));c.appendChild(h("button",{type:"button",text:"Turn on desktop alerts",onclick:function(){Notification.requestPermission().then(function(){route();});}}));}
   if(!list.length)c.appendChild(h("p",{"class":"muted",text:"No alerts yet."}));
   list.forEach(function(x){
     var row=h("div",{"class":"cm",style:x.read?"opacity:.6":""},[h("b",{text:x.fromName||"Someone"}),h("small",{text:new Date(x.ts).toLocaleString()}),h("p",{text:x.text})]);
     row.appendChild(h("button",{type:"button",text:"Open",onclick:function(){
-      db.collection("notifs").doc(x.id).update({read:true});
+      x.ids.forEach(function(id){db.collection("notifs").doc(id).update({read:true}).catch(window.fbError);});
       if(x.type==="dm"){dmWith=x.from;location.hash="dm";}
       else if(x.type==="friend_request"||x.type==="friend_accept")location.hash="friends";
       else if(x.type==="wall")location.hash="room-"+me.uid;
@@ -764,7 +894,7 @@ function pSponsors(){
       d.appendChild(h("h3",{"class":"gold role-"+x.kind,text:x.name||""}));
       if(x.kind==="creator")d.appendChild(h("a",{"class":"btn",href:"#creator-"+x.id,text:"Visit creator page"}));
       if(x.blurb)d.appendChild(h("p",{text:x.blurb}));
-      if(isHttps(x.link))d.appendChild(h("a",{"class":"btn",href:x.link,target:"_blank",rel:"noopener noreferrer",text:"Visit"}));
+      var outbound=creatorLink(x);if(outbound)d.appendChild(outbound);
       if(isAdmin){d.appendChild(h("span",{text:" "}));d.appendChild(h("button",{"class":"del",text:"Delete",onclick:function(){if(confirm("Remove this?"))db.collection("sponsors").doc(x.id).delete();}}));}
       g.appendChild(d);
     });
@@ -802,18 +932,20 @@ function markConversationRead(){
 }
 document.addEventListener('visibilitychange',function(){if(!document.hidden)markConversationRead();});
 function memberSafety(uid,messageId){
-  var box=h('div',{'class':'member-safety'}),status=h('p',{role:'status','class':'note'});
+  var box=h('details',{'class':'member-safety'}),status=h('p',{role:'status','class':'note'});
   if(!me||uid===me.uid)return box;
   var block=h('button',{type:'button','data-block-target':uid,text:blockedMember(uid)?'Unblock member':'Block member',onclick:async function(){
     var on=blockedMember(uid);if(!on&&!confirm('Block new messages, friend requests, follows and wall posts between you and this member?'))return;
     try{var ref=db.collection('memberBlocks/'+me.uid+'/blocked').doc(uid);if(on)await ref.delete();else await ref.set({target:uid,ts:Date.now()});status.textContent=on?'Member unblocked.':'Member blocked. Previous messages are hidden while blocked.';}catch(e){status.textContent=e.message;}
   }});
-  box.appendChild(block);
+  box.appendChild(h('summary',{text:messageId?'⋯ Message options':'⋯ Member options'}));
+  var options=h('div',{'class':'safety-options'});box.appendChild(options);
+  options.appendChild(block);
   var detail=h('details',{},[h('summary',{text:messageId?'Report this message':'Report member'})]),reason=h('textarea',{rows:'3',maxlength:'1000','aria-label':'Report reason',placeholder:'Describe the problem. Reports are visible only to admins.'}),submit=h('button',{type:'button',text:'Submit report',onclick:async function(){
     var text=reason.value.trim();if(!text){status.textContent='Please describe the problem.';return;}submit.disabled=true;
     try{await db.collection('reports').doc(crypto.randomUUID()).set({reporter:me.uid,target:uid,messageId:messageId||'',reason:text,status:'open',ts:Date.now()});reason.value='';detail.open=false;status.textContent='Report sent to the admin. No private-message content was copied.';}catch(e){status.textContent='Could not report: '+e.message;}finally{submit.disabled=false;}
   }});
-  detail.appendChild(reason);detail.appendChild(submit);box.appendChild(detail);box.appendChild(status);return box;
+  detail.appendChild(reason);detail.appendChild(submit);options.appendChild(detail);options.appendChild(status);return box;
 }
 function renderReportQueue(container,say){
   container.appendChild(h('h3',{'class':'gold',text:'Member reports'}));
@@ -972,7 +1104,7 @@ function pMyRoom(){
     TE.set(o);if(typeof o.css==="string")cssTa.value=o.css.slice(0,4000);
     msg.textContent="Theme code loaded. Press Save my room to keep it.";codeIn.value="";
   }}));
-  c=tabs.panel("music");
+  c=tabs.panel("music");musicEffectsControl(c);
   c.appendChild(h("label",{text:"My song (plays on loop in my room)"}));c.appendChild(sg);c.appendChild(sgt);
   c.appendChild(h("p",{"class":"note",text:"Songs can't be uploaded here. Paste a direct https link to an audio file."}));
   c.appendChild(h("label",{text:"🎵 My music bot playlist (up to 6 more songs, https links)"}));
@@ -1184,22 +1316,25 @@ function pNsfw(){
 function renderDM(){
   if(!dmBox||!document.body.contains(dmBox))return;
   if(dmBox.contains(document.activeElement)&&document.activeElement.tagName==="TEXTAREA")return;
-  dmBox.innerHTML="";
   dmBox.style.display=dmWith?"block":"none";if(dmForm)dmForm.style.display=dmWith?"block":"none";if(!dmWith)return;
-  if(blockedMember(dmWith)){dmBox.appendChild(h('p',{text:'This member is blocked. Previous messages are hidden; unblock them to view the conversation.'}));dmForm.style.display='none';return;}
+  if(blockedMember(dmWith)){dmBox.innerHTML='';dmSignature='blocked';dmBox.appendChild(h('p',{text:'This member is blocked. Previous messages are hidden; unblock them to view the conversation.'}));dmForm.style.display='none';return;}
   markConversationRead();
   var all=state.dmIn.filter(function(m){return m.from===dmWith;}).concat(state.dmOut.filter(function(m){return m.to===dmWith;})).sort(function(a,b){return a.ts-b.ts;});
-  all.forEach(function(m){
+  var signature=dmWith+':'+dmWindow+':'+all.length+':'+all.slice(-dmWindow).map(function(m){return m.id;}).join('|');
+  if(signature===dmSignature)return;dmSignature=signature;
+  var near=dmBox.scrollHeight-dmBox.scrollTop-dmBox.clientHeight<100,oldHeight=dmBox.scrollHeight;dmBox.innerHTML='';
+  if(all.length>dmWindow)dmBox.appendChild(h('button',{type:'button',text:'Load older messages',onclick:function(){dmWindow+=80;dmSignature='';renderDM();}}));
+  all.slice(-dmWindow).forEach(function(m){
     var mine=m.from===me.uid;
     var row=h("div",{"class":"cm"},[h("b",{"class":roleClass(m.from),text:mine?"You":(m.fromName||"Them")}),h("small",{text:new Date(m.ts).toLocaleString()}),h("p",{text:m.text})]);
     if(m.image&&m.image.indexOf("data:image/jpeg;base64,")===0){
       var image=h("img",{src:m.image,alt:m.imageName||"Private image",style:"max-width:100%;max-height:320px;display:block;border-radius:10px;cursor:zoom-in",onclick:function(){zoom(m.image);}});row.appendChild(image);
     }
-    if(!mine)row.appendChild(memberSafety(m.from,m.id));
+    if(!mine){var menu=h('details',{'class':'member-safety'},[h('summary',{text:'⋯ Message options'})]);menu.addEventListener('toggle',function(){if(menu.open&&!menu.querySelector('.safety-options')){var full=memberSafety(m.from,m.id);menu.appendChild(full.querySelector('.safety-options'));} });row.appendChild(menu);}
     dmBox.appendChild(row);
   });
   if(!all.length)dmBox.appendChild(h("p",{"class":"muted",text:"No messages yet. Say hello!"}));
-  dmBox.scrollTop=dmBox.scrollHeight;
+  if(near||!oldHeight)dmBox.scrollTop=dmBox.scrollHeight;
 }
 function pDM(){
   if(!me){needLogin();return;}
@@ -1210,7 +1345,7 @@ function pDM(){
   state.users.forEach(function(u){if(u.id!==me.uid)sel.appendChild(h("option",{value:u.id,text:stIcon(u.id)+" "+(u.name||"Member")}));});
   sel.value=dmWith;if(sel.value!==dmWith){dmWith="";sel.value="";}
   var safety=h("div");function showSafety(){safety.innerHTML="";if(dmWith)safety.appendChild(memberSafety(dmWith));}
-  sel.onchange=function(){dmWith=sel.value;showSafety();renderDM();};showSafety();
+  sel.onchange=function(){dmWith=sel.value;dmWindow=80;dmSignature='';showSafety();renderDM();};showSafety();
   dmBox=h("div",{style:"height:45vh;overflow-y:auto;border:1px solid #3a2a0c;border-radius:10px;padding:4px 12px;margin-bottom:10px;background:var(--inbg,#0e0a04)"});
   var tx=h("input",{placeholder:"Type a private message…",maxlength:"500"}),er=h("div",{"class":"err"});
   var imageFile=h("input",{type:"file",accept:"image/jpeg,image/png,image/gif,image/webp","aria-label":"Private image, up to 10 MB"}),sending=false;
@@ -1730,7 +1865,7 @@ function pAdmin(){
   }
   var c=h("div",{"class":"card"},[h("h2",{"class":"gold",text:"Admin"}),
     h("button",{"class":"del",text:"Log out",onclick:function(){FB.logout();}})]);
-  var page=c,tabs=editorTabs(page,"admin",[["content","Photos & comics"],["appearance","Appearance"],["entrance","Entrance"],["announcements","Announcements"],["members","Members & rooms"],["safety","Safety & 18+"],["logins","Login history"],["donations","Donations"],["backups","Backups"]]);
+  var page=c,tabs=editorTabs(page,"admin",[["content","Photos & comics"],["appearance","Appearance"],["entrance","Entrance"],["announcements","Announcements"],["members","Members & rooms"],["safety","Safety & 18+"],["logins","Login history"],["donations","Donations"],["backups","Backups"],["arcade","Arcade Games"]]);
   c=tabs.panel("content");
   var msg=h("div",{id:"admin-feedback","class":"note",role:"status","aria-live":"polite"});
   function say(t){msg.textContent=t;}
@@ -1774,7 +1909,7 @@ function pAdmin(){
     if(dl.value&&!/^https:\/\//i.test(dl.value)){say("The link must start with https://");return;}
     saveSettings({donate:dl.value.trim(),donmsg:dm.value}).then(function(){say("Saved.");}).catch(function(e){say("Could not save: "+(e&&e.message||"error"));});
   }}));
-  c=tabs.panel("appearance");
+  c=tabs.panel("appearance");musicEffectsControl(c);
   c.appendChild(h("label",{text:"🖼️ Corner pictures (the picture in the upper left)"}));
   var cpf=h("input",{type:"file",accept:"image/*"}),cpn=h("input",{placeholder:"Name for this picture",maxlength:"40"});
   c.appendChild(cpf);c.appendChild(cpn);
@@ -1794,7 +1929,7 @@ function pAdmin(){
   var cmap=state.settings.cornerMap||{},csel={};
   function libSel(v,first){var e=h("select");e.appendChild(h("option",{value:"",text:first}));lib.forEach(function(l){e.appendChild(h("option",{value:l[0],text:l[1]}));});e.value=v||"";return e;}
   c.appendChild(h("p",{"class":"note",text:"Pick which picture each tab shows. Several tabs can share one picture."}));
-  [["home","Gallery"],["comic","Comic"],["story","Story"],["chat","Live Chat"],["login","Login"],["rooms","Rooms"],["friends","Friends"],["alerts","Alerts"],["dm","Messages"],["voice","Voice"],["settings","Settings"],["nsfw","18+"],["sponsors","Creators"],["give","Donate"],["admin","Admin"]].forEach(function(t){
+  [["home","Gallery"],["comic","Comic"],["story","Story"],["chat","Live Chat"],["login","Login"],["rooms","Rooms"],["friends","Friends"],["alerts","Alerts"],["dm","Messages"],["voice","Voice"],["settings","Settings"],["nsfw","18+"],["sponsors","Creators"],["give","Donate"],["admin","Admin"],["arcade","Arcade Games"]].forEach(function(t){
     csel[t[0]]=libSel(cmap[t[0]],"(default)");
     c.appendChild(h("div",{style:"display:flex;gap:10px;align-items:center"},[h("span",{style:"width:100px;flex:none",text:t[1]}),csel[t[0]]]));
   });
@@ -1861,7 +1996,7 @@ function pAdmin(){
   });
   if(!state.users.length)c.appendChild(h("p",{"class":"note",text:"No members yet."}));
   c.appendChild(h("p",{"class":"note",text:"Delete buttons show on the Gallery, Comic and comment areas while you are logged in. Songs are set in config.js."}));
-  adminCommunity(tabs,say);
+  adminCommunity(tabs,say);arcadeAdmin(tabs.panel("arcade"));sponsorPinEditor(tabs.panel("announcements"),say);
   var queue=h("div",{id:"member-report-queue"});tabs.panel("safety").appendChild(queue);renderReportQueue(queue,say);backupTools(tabs.panel("backups"),say);
   page.appendChild(msg);view.appendChild(page);
 }
@@ -1872,7 +2007,7 @@ function pCreator(id){
   var c=h("article",{"class":"card"},[h("h2",{"class":"gold role-creator",text:page.name})]);
   if(page.img&&page.img.indexOf("data:image/jpeg;base64,")===0)c.appendChild(h("img",{src:page.img,alt:page.name,style:"max-width:100%;max-height:420px;border-radius:12px"}));
   c.appendChild(h("p",{text:page.blurb||"Welcome to my creator page!",style:"white-space:pre-wrap"}));
-  if(isHttps(page.link))c.appendChild(h("a",{"class":"btn",href:page.link,target:"_blank",rel:"noopener noreferrer",text:"Creator link"}));
+  var outbound=creatorLink(page);if(outbound)c.appendChild(outbound);
   c.appendChild(h("p",{"class":"note",text:"Visitors can view this page. Only its assigned creator and the admin can edit it."}));
   view.appendChild(c);
   if(!isAdmin&&(!me||page.owner!==me.uid)){
@@ -1881,10 +2016,15 @@ function pCreator(id){
   var editor=h("details",{"class":"card"},[h("summary",{text:"✏️ Edit creator page"})]);
   var name=h("input",{value:page.name,maxlength:"60","aria-label":"Creator name"}),body=h("textarea",{rows:"10",maxlength:"4000","aria-label":"Creator page text"}),link=h("input",{value:page.link||"",maxlength:"300","aria-label":"Creator link"}),picture=h("input",{type:"file",accept:"image/*","aria-label":"Creator picture"}),status=h("p",{"class":"note"});body.value=page.blurb||"";
   [h("label",{text:"Name"}),name,h("label",{text:"Page text"}),body,h("label",{text:"Link (https://)"}),link,h("label",{text:"Picture (optional replacement)"}),picture].forEach(function(el){editor.appendChild(el);});
+  var buttonLabel=h('input',{maxlength:'40','aria-label':'Website button label'}),buttonBg=h('input',{type:'color','aria-label':'Website button background'}),buttonColor=h('input',{type:'color','aria-label':'Website button text color'}),buttonShape=h('select',{'aria-label':'Website button shape'}),buttonPreview=h('div');
+  buttonLabel.value=page.buttonLabel||'Visit website';buttonBg.value=isHex(page.buttonBg)?page.buttonBg:'#f5c542';buttonColor.value=isHex(page.buttonColor)?page.buttonColor:'#1a1204';
+  ['rounded','pill','square'].forEach(function(shape){buttonShape.appendChild(h('option',{value:shape,text:shape}));});buttonShape.value=page.buttonShape||'rounded';
+  function previewButton(){buttonPreview.innerHTML='';var example=creatorLink({link:isHttps(link.value)?link.value:'https://example.com',buttonLabel:buttonLabel.value,buttonBg:buttonBg.value,buttonColor:buttonColor.value,buttonShape:buttonShape.value});example.removeAttribute('href');example.setAttribute('aria-disabled','true');buttonPreview.appendChild(example);}
+  editor.appendChild(h('h3',{'class':'gold',text:'External website button'}));[buttonLabel,buttonBg,buttonColor,buttonShape].forEach(function(el){el.addEventListener('input',previewButton);editor.appendChild(el);});editor.appendChild(buttonPreview);previewButton();
   editor.appendChild(h("button",{text:"Save creator page",onclick:async function(){
     if(!name.value.trim()||(link.value&&!isHttps(link.value.trim()))){status.textContent="Add a name and use an https:// link.";return;}
     try{var img=picture.files[0]?(await assets.upload(picture.files[0])).url:page.img||"";
-      await db.collection("sponsors").doc(id).update({name:name.value.trim(),blurb:body.value,link:link.value.trim(),img:img});status.textContent="Saved.";picture.value="";
+      await db.collection("sponsors").doc(id).update({name:name.value.trim(),blurb:body.value,link:link.value.trim(),img:img,buttonLabel:buttonLabel.value.trim(),buttonBg:buttonBg.value,buttonColor:buttonColor.value,buttonShape:buttonShape.value});status.textContent="Saved.";picture.value="";
     }catch(e){status.textContent="Could not save: "+e.message;}
   }}));
   if(me&&page.owner===me.uid){
@@ -1953,9 +2093,11 @@ function adminCommunity(tabs,say){
   var motion=matchMedia("(prefers-reduced-motion:reduce)"),enabled=lstore("midas-beat")!=="off";
   var toggle=h("button",{type:"button","aria-pressed":String(enabled),text:enabled?"Beat glow: on":"Beat glow: off",onclick:function(){enabled=!enabled;lstore("midas-beat",enabled?"on":"off");toggle.textContent=enabled?"Beat glow: on":"Beat glow: off";toggle.setAttribute("aria-pressed",String(enabled));if(enabled)start();else stop();}});
   document.getElementById("bar").appendChild(toggle);
-  function stop(){cancelAnimationFrame(frame);frame=0;document.body.classList.remove("beat-active");document.documentElement.style.setProperty("--beat-glow","0px");}
+  var beatLayer=h('div',{id:'beat-particles','aria-hidden':'true'}),lastParticle=0;document.body.appendChild(beatLayer);
+  document.body.setAttribute('data-beat-style',lstore('midas-music-style')||'glow');
+  function stop(){beatLayer.innerHTML='';cancelAnimationFrame(frame);frame=0;document.body.classList.remove("beat-active");document.documentElement.style.setProperty("--beat-glow","0px");document.documentElement.style.setProperty("--beat-level","0");}
   function start(){
-    stop();if(!enabled||motion.matches||document.body.classList.contains('reduce-effects')||player.paused||document.hidden)return;
+    stop();if((lstore('midas-music-style')||'glow')==='off'||!enabled||motion.matches||document.body.classList.contains('reduce-effects')||player.paused||document.hidden)return;
     try{
       if(!analyser){
         var capture=player.captureStream||player.mozCaptureStream;if(!capture)return;
@@ -1964,7 +2106,10 @@ function adminCommunity(tabs,say){
         var silent=context.createGain();silent.gain.value=0;source.connect(analyser);analyser.connect(silent);silent.connect(context.destination);
       }
       context.resume().catch(function(){});var bins=new Uint8Array(analyser.frequencyBinCount),smooth=0;
-      function tick(){if(!enabled||motion.matches||document.body.classList.contains('reduce-effects')||player.paused||document.hidden){stop();return;}analyser.getByteFrequencyData(bins);var bass=0;for(var i=1;i<16;i++)bass+=bins[i];smooth=smooth*.65+(bass/(15*255))*.35;document.documentElement.style.setProperty("--beat-glow",(smooth*30).toFixed(1)+"px");document.body.classList.add("beat-active");frame=requestAnimationFrame(tick);}
+      function tick(){if((lstore('midas-music-style')||'glow')==='off'||!enabled||motion.matches||document.body.classList.contains('reduce-effects')||player.paused||document.hidden){stop();return;}analyser.getByteFrequencyData(bins);var bass=0;for(var i=1;i<16;i++)bass+=bins[i];smooth=smooth*.65+(bass/(15*255))*.35;
+        var style=lstore('midas-music-style')||'glow';
+        if((style==='flames'||style==='bubbles')&&smooth>.16&&performance.now()-lastParticle>140&&beatLayer.childElementCount<12){lastParticle=performance.now();var particle=h('i',{'class':'beat-particle'+(style==='flames'?' flame':''),style:'--x:'+(Math.random()*96)+'%;--s:'+(12+smooth*25)+'px'});particle.addEventListener('animationend',function(){particle.remove();},{once:true});beatLayer.appendChild(particle);}
+        document.documentElement.style.setProperty("--beat-level",Math.max(0,Math.min(1,smooth)).toFixed(3));document.documentElement.style.setProperty("--beat-glow",(smooth*30).toFixed(1)+"px");document.body.classList.add("beat-active");frame=requestAnimationFrame(tick);}
       frame=requestAnimationFrame(tick);
     }catch(e){stop();}
   }
@@ -1978,9 +2123,10 @@ function adminCommunity(tabs,say){
 /* ---------- data ---------- */
 function snap(s){return s.docs.map(function(d){var o=d.data();if(o.ts&&typeof o.ts.toMillis==="function")o.ts=o.ts.toMillis();o.id=d.id;return o;});}
 function loaded(){
+  db.doc('settings/arcade').onSnapshot(function(s){state.arcade=s.exists?s.data():{links:[]};if(location.hash==='#arcade'||location.hash==='#admin')refresh();});
   db.collection("siteRoles").onSnapshot(function(s){state.roles=snap(s);refresh();});
   db.collection("announcements").onSnapshot(function(s){state.announcements=snap(s);refresh();},{limit:20});
-  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});entranceReady=true;applySite();applyCorner();refresh();});
+  db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});entranceReady=true;if(window.MidasLoading)MidasLoading.ready();applySite();applyCorner();refresh();});
   db.collection("photos").onSnapshot(function(s){state.photos=snap(s);refresh();});
   db.collection("comics").onSnapshot(function(s){state.comics=snap(s);refresh();});
   db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")refresh();});
@@ -2106,7 +2252,12 @@ function shape(k,z){
   else if(k==="clover")clover(z);
   else if(k==="fireworks")fireworks(z);
 }
+var particleFrame=0;
+function resumeParticles(){if(!particleFrame&&!still&&!document.hidden)particleFrame=requestAnimationFrame(tick);}
+addEventListener('effects-preference',function(){if(still){cancelAnimationFrame(particleFrame);particleFrame=0;cx.clearRect(0,0,W,H);}else resumeParticles();});
+document.addEventListener('visibilitychange',function(){if(document.hidden){cancelAnimationFrame(particleFrame);particleFrame=0;}else resumeParticles();});
 function tick(){
+  particleFrame=0;if(still||document.hidden)return;
   cx.clearRect(0,0,W,H);
   if(fx.gs!=="none")dots.forEach(function(d){
     d.ph+=d.sp;if(!still){d.y+=d.vy;d.x+=d.vx+Math.sin(d.ph)*.2;}
@@ -2121,9 +2272,9 @@ function tick(){
     cx.save();cx.translate(p.x,p.y);cx.rotate(NOROT[fx.ps]?0:(SWAY[fx.ps]?Math.sin(p.r*1.5)*.35:p.r));cx.globalAlpha=p.a;var pcol=fx.pc==="rainbow"?"hsl("+(((p.r*60+p.x*.2)%360+360)%360)+",95%,62%)":fx.pc;cx.fillStyle=pcol;cx.shadowColor=pcol;cx.shadowBlur=10;
     shape(fx.ps,p.s);cx.restore();
   });
-  requestAnimationFrame(tick);
+  particleFrame=requestAnimationFrame(tick);
 }
-tick();
+resumeParticles();
 /* ---------- cursor and touch effects ---------- */
 var tv=document.getElementById("fxtop"),tc2=tv.getContext("2d"),fxp=[],mxy={x:-99,y:-99,lx:-99,ly:-99,on:false},fxRun=false,hueN=0,fxLast=0;
 function tsize(){tv.width=innerWidth;tv.height=innerHeight;}
