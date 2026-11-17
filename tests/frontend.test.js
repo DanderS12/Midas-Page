@@ -17,7 +17,7 @@ function app() {
   w.HTMLMediaElement.prototype.play = () => Promise.resolve();w.HTMLMediaElement.prototype.pause = () => {};w.HTMLMediaElement.prototype.load = () => {};
   w.URL.createObjectURL = () => 'blob:test';w.URL.revokeObjectURL = () => {};
   w.eval(classic.replace('\nroute();\n})();', `
-    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,pHome:pHome,photoGrid:photoGrid,storyPics:storyPics,savedImage:savedImage,pictureElement:pictureElement,pAlerts:pAlerts,pCassie:pCassie,pArcade:pArcade,arcadeAdmin:arcadeAdmin,arcadeURL:arcadeURL,groupedAlerts:groupedAlerts,creatorLink:creatorLink,sponsorBanner:sponsorBanner,pRooms:pRooms,memberSafety:memberSafety,renderDM:renderDM,markConversationRead:markConversationRead,updateMessageBadge:updateMessageBadge,activeAnnouncements:activeAnnouncements,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,themeOf:themeOf,THEMES:THEMES,applySite:applySite,
+    window.testing={state:state,route:route,pDM:pDM,pStory:pStory,pCreator:pCreator,pAdmin:pAdmin,pMyRoom:pMyRoom,ensurePageData:ensurePageData,pHome:pHome,photoGrid:photoGrid,storyPics:storyPics,savedImage:savedImage,pictureElement:pictureElement,pAlerts:pAlerts,pCassie:pCassie,pArcade:pArcade,arcadeAdmin:arcadeAdmin,arcadeURL:arcadeURL,groupedAlerts:groupedAlerts,creatorLink:creatorLink,sponsorBanner:sponsorBanner,pRooms:pRooms,memberSafety:memberSafety,renderDM:renderDM,markConversationRead:markConversationRead,updateMessageBadge:updateMessageBadge,activeAnnouncements:activeAnnouncements,refresh:refresh,adminCommunity:adminCommunity,directoryMember:directoryMember,entranceDigest:entranceDigest,themeOf:themeOf,THEMES:THEMES,applySite:applySite,
       entranceReady:function(){entranceReady=true;},
       setup:function(user,admin,adapter){me=user;isAdmin=admin;db=adapter;assets={upload:async function(){return {url:'data:image/jpeg;base64,test'};}};},
       recipient:function(uid){dmWith=uid;},roleClass:roleClass};
@@ -271,4 +271,10 @@ test('unsupported saved images show a visible explanation instead of disappearin
 });
 test('startup snapshot refreshes coalesce into a single scheduled page render',async()=>{
   const a=app();let cleared=0;const view=a.doc.querySelector('#view'),observer=new a.w.MutationObserver(records=>{cleared+=records.filter(r=>r.removedNodes.length>0).length;});observer.observe(view,{childList:true});a.api.refresh();a.api.refresh();a.api.refresh();await new Promise(r=>setTimeout(r,130));observer.disconnect();assert.equal(cleared,1);a.close();
+});
+test('content subscriptions wait for the relevant route and are not duplicated',()=>{
+  const a=app(),names=[];a.api.setup(null,false,{collection:name=>({onSnapshot:()=>{names.push(name);return ()=>{};}})});a.w.history.replaceState(null,'','#login');a.api.ensurePageData();assert.equal(names.length,0);a.w.history.replaceState(null,'','#home');a.api.ensurePageData();assert.deepEqual(names,['photos','comments','likes']);a.api.ensurePageData();assert.equal(names.length,3);a.w.history.replaceState(null,'','#comic');a.api.ensurePageData();assert.equal(names.at(-1),'comics');assert.equal(names.includes('stories'),false);a.close();
+});
+test('entrance blue flames are decorative and reduced-motion safe; lounge fire uses captured audio',()=>{
+  const a=app();assert.equal(a.doc.querySelectorAll('#gate .entrance-flames i').length,6);assert.equal(a.doc.querySelector('.entrance-flames').getAttribute('aria-hidden'),'true');const css=fs.readFileSync(require.resolve('../lounge.css'),'utf8');assert.match(css,/\.reduce-effects \.entrance-flames i\{animation:none/);assert.match(css,/\.lounge-route \.beat-particle.flame/);assert.match(html,/classList.contains\('lounge-route'\)\?'flames'/);a.close();
 });

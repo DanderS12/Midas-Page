@@ -119,7 +119,7 @@ select{width:100%;padding:10px;background:var(--inbg,#0e0a04);color:var(--text);
 <canvas id="glitter"></canvas>
 <canvas id="fxtop"></canvas>
 
-<div id="gate"><div class="card">
+<div id="gate"><div class="entrance-flames" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="card">
   <h1 class="gold" style="font-size:2.2rem">The Midas Room</h1>
   <p class="sub">Everything here turns to gold.</p>
   <label for="gp">Password</label>
@@ -373,7 +373,7 @@ function route(){
   var bottomPin=sponsorBanner('bottom');if(bottomPin)view.appendChild(bottomPin);
   setFx(roomFx);paintDots();
   if(roomSong)setSong(100,roomSong.url,roomSong.title,roomSong.list);else setSong({home:1,comic:2,story:3,give:4,admin:5}[r]||0);
-  curR=r;applyCorner();
+  curR=r;applyCorner();if(db)ensurePageData();
 }
 (function(){
   var nv=document.getElementById("nav"),mb=document.getElementById("menubtn");
@@ -2129,7 +2129,7 @@ function adminCommunity(tabs,say){
       }
       context.resume().catch(function(){});var bins=new Uint8Array(analyser.frequencyBinCount),smooth=0;
       function tick(){if((lstore('midas-music-style')||'glow')==='off'||!enabled||motion.matches||document.body.classList.contains('reduce-effects')||player.paused||document.hidden){stop();return;}analyser.getByteFrequencyData(bins);var bass=0;for(var i=1;i<16;i++)bass+=bins[i];smooth=smooth*.65+(bass/(15*255))*.35;
-        var style=lstore('midas-music-style')||'glow';
+        var style=document.body.classList.contains('lounge-route')?'flames':(lstore('midas-music-style')||'glow');
         if((style==='flames'||style==='bubbles')&&smooth>.16&&performance.now()-lastParticle>140&&beatLayer.childElementCount<12){lastParticle=performance.now();var particle=h('i',{'class':'beat-particle'+(style==='flames'?' flame':''),style:'--x:'+(Math.random()*96)+'%;--s:'+(12+smooth*25)+'px'});particle.addEventListener('animationend',function(){particle.remove();},{once:true});beatLayer.appendChild(particle);}
         document.documentElement.style.setProperty("--beat-level",Math.max(0,Math.min(1,smooth)).toFixed(3));document.documentElement.style.setProperty("--beat-glow",(smooth*30).toFixed(1)+"px");document.body.classList.add("beat-active");frame=requestAnimationFrame(tick);}
       frame=requestAnimationFrame(tick);
@@ -2144,19 +2144,25 @@ function adminCommunity(tabs,say){
 
 /* ---------- data ---------- */
 function snap(s){return s.docs.map(function(d){var o=d.data();if(o.ts&&typeof o.ts.toMillis==="function")o.ts=o.ts.toMillis();o.id=d.id;return o;});}
+// Subscribe to large image/content collections only when their page is visited.
+var pageDataStarted={};
+function ensurePageData(){
+  if(!db)return;var r=(location.hash||'#home').slice(1),wanted=[];
+  if(r==='home'||r==='')wanted=['photos','comments','likes'];
+  if(r==='comic')wanted=['comics'];if(r==='story')wanted=['stories'];if(r==='chat')wanted=['chat'];
+  if(r==='sponsors'||r.indexOf('creator-')===0||r==='rooms'||r.indexOf('room-')===0||r==='friends'||r==='dm')wanted.push('sponsors');
+  if(r==='admin'&&isAdmin)wanted=['photos','comics','stories','sponsors'];
+  wanted.forEach(function(name){if(pageDataStarted[name])return;pageDataStarted[name]=true;
+    db.collection(name).onSnapshot(function(snapshot){state[name]=snap(snapshot);if(name==='chat'){renderChat();return;}var current=(location.hash||'#home').slice(1),relevant=current==='admin'||(name==='photos'||name==='comments'||name==='likes')&&current==='home'||name==='comics'&&current==='comic'||name==='stories'&&current==='story'||name==='sponsors'&&(current==='sponsors'||current.indexOf('creator-')===0||current==='rooms'||current.indexOf('room-')===0);if(relevant)refresh();},name==='chat'?{limit:100}:undefined);
+  });
+}
 function loaded(){
   db.doc('settings/arcade').onSnapshot(function(s){state.arcade=s.exists?s.data():{links:[]};if(location.hash==='#arcade'||location.hash==='#admin')refresh();});
   db.collection("siteRoles").onSnapshot(function(s){state.roles=snap(s);refresh();});
   db.collection("announcements").onSnapshot(function(s){state.announcements=snap(s);refresh();},{limit:20});
   db.doc("settings/site").onSnapshot(function(s){state.settings=Object.assign({},(s.exists&&s.data())||{},(window.SITE&&SITE.settings)||{});entranceReady=true;if(window.MidasLoading)MidasLoading.ready();applySite();applyCorner();refresh();});
-  db.collection("photos").onSnapshot(function(s){state.photos=snap(s);refresh();});
-  db.collection("comics").onSnapshot(function(s){state.comics=snap(s);refresh();});
-  db.collection("comments").onSnapshot(function(s){state.comments=snap(s);if(document.activeElement.tagName!=="TEXTAREA"&&document.activeElement.tagName!=="INPUT")refresh();});
-  db.collection("likes").onSnapshot(function(s){state.likes=snap(s);if((location.hash||"#home")==="#home")refresh();});
-  db.collection("chat").onSnapshot(function(s){state.chat=snap(s);renderChat();},{limit:100});
-  db.collection("stories").onSnapshot(function(s){state.stories=snap(s);if((location.hash||"")==="#story")refresh();});
-  db.collection("sponsors").onSnapshot(function(s){state.sponsors=snap(s);if((location.hash||"")==="#sponsors"||(location.hash||"").indexOf("#creator-")===0)refresh();});
   db.collection("cpics").onSnapshot(function(s){state.cpics=snap(s);applyCorner();if((location.hash||"")==="#admin")refresh();});
+  ensurePageData();
 }
 (function(){
   var C=window.SITE||{};
